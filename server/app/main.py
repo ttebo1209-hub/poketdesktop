@@ -36,7 +36,7 @@ from . import (achievements, auth, avatar, battle_routes, board, board_routes, m
                expedition, item_routes, walkpts,
                errors, friendly, halloween, housekeep, items, live, live_routes, migrations, mypage, party, pvp, pvp_routes,
                raid, raid_routes,
-               guild, guild_routes, guild_war_routes, guild_ws,
+               guild, guild_routes, guild_war_routes, guild_ws, internal_routes,
                boss_routes, gym_routes, social_routes, tm_routes, tms, troubles, visit, walk)
 
 app = FastAPI(title="poketdesktop", version=config.VERSION)
@@ -58,6 +58,7 @@ app.include_router(friendly.router)
 app.include_router(guild_war_routes.router)     # 길드전 (시즌 4). /api/guild/{gid}/... 보다 먼저 건다
 app.include_router(guild_routes.router)
 app.include_router(guild_ws.router)
+app.include_router(internal_routes.router)        # 관리자 통로 - 서버 안(127.0.0.1)에서만 (2.0.x)
 app.include_router(visit.router)               # 친구 집에 놀러 가기 · 친구 채팅 (1.11.0)
 app.include_router(expedition.router)
 app.include_router(troubles.router)             # 앱이 배틀을 접은 까닭 (1.13.3)
@@ -83,6 +84,7 @@ def _startup():
         threading.Thread(target=_warm_sprites, daemon=True).start()
     db.init()
     migrations.run()
+    internal_routes.make_key()          # 관리자 통로의 열쇠 - 뜰 때마다 새로 (2.0.x)
     # 길드 미션 보상은 저절로 들어온다 (1.10.3). 이 판으로 바뀌기 전에 오늘 이미 넘어 있던
     # 단계를 한 번 챙긴다 - 그 뒤로는 미션을 끝낼 때마다 guild.note 가 준다. 몇 번을 불러도
     # 같은 보상은 한 번만 나간다.

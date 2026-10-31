@@ -19,6 +19,10 @@
 	# 중요: 두 헤더 모두 '덧붙이기'가 아니라 '덮어쓰기'다.
 	# 그냥 두면 클라이언트가 X-Forwarded-For 를 직접 넣어 보낼 때
 	# 그 값이 맨 앞에 오기 때문에 IP 를 마음대로 위조할 수 있다.
+	# 관리자 통로는 서버 안(127.0.0.1)에서만 쓴다 (server/app/internal_routes.py). 밖으로는 아예 내주지 않는다.
+	# 서버도 127.0.0.1 · 열쇠를 따로 보지만, 문이 하나 더 있는 셈이다.
+	respond /internal/* 404
+
 	reverse_proxy poket-server:8080 {
 		header_up X-Real-IP {remote_host}
 		header_up X-Forwarded-For {remote_host}

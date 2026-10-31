@@ -14,10 +14,13 @@
   3. 사람이 들어오면 알림 줄과 '바뀌었다' 가 온다.
   4. 내보내지면 '나왔다' 가 오고 서버가 끊는다. 해산해도 마찬가지다.
   5. 한 사람이 너무 많이 붙으면 끊는다 (4429). ping 에는 pong.
+  6. 관리자 통로(/internal/guild/say)로 넣은 알림 줄도 바로 밀려온다. 열쇠가 없거나 틀리면 404.
 """
 import json
+import os
 import sqlite3
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -49,6 +52,34 @@ def call(method, path, body=None, token=None):
         req.add_header("Authorization", "Bearer " + token)
     try:
         with urllib.request.urlopen(req, timeout=60) as r:
+            return r.status, json.loads(r.read().decode() or "{}")
+    except urllib.error.HTTPError as e:
+        try:
+            return e.code, json.loads(e.read().decode() or "{}")
+        except ValueError:
+            return e.code, {}
+
+
+# 관리자 통로의 열쇠 - 서버가 뜰 때 이 파일에 적는다 (app/internal_routes.py). 검사는 서버와 같은 기계에서 돈다.
+INTERNAL_KEY_FILE = os.environ.get("POKET_INTERNAL_KEY_FILE") or os.path.join(tempfile.gettempdir(), "poket-internal.key")
+
+
+def internal_key():
+    try:
+        with open(INTERNAL_KEY_FILE) as f:
+            return f.read().strip()
+    except OSError:
+        return ""
+
+
+def internal(method, path, body=None, key=None):
+    data = json.dumps(body).encode() if body is not None else None
+    req = urllib.request.Request(BASE + path, data=data, method=method)
+    req.add_header("Content-Type", "application/json")
+    if key:
+        req.add_header("X-Internal-Key", key)
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
             return r.status, json.loads(r.read().decode() or "{}")
     except urllib.error.HTTPError as e:
         try:
@@ -158,6 +189,29 @@ def main():
     ea, eb = recv(sa, 3), recv(sb, 3)
     chk("한 사람이 말하면 둘 다 받는다", isinstance(ea, dict) and isinstance(eb, dict)
         and ea.get("m", {}).get("body") == "둘 다 받나요" and ea == eb, (ea, eb))
+
+    print("\n=== 관리자 통로: 알림 줄을 서버 안에서 넣는다 (2.0.x) ===")
+    st, _r = internal("POST", "/internal/guild/say", {"guild": gid, "text": "열쇠 없이"})
+    chk("열쇠가 없으면 404 (있다는 것도 안 알린다)", st == 404, st)
+    st, _r = internal("POST", "/internal/guild/say", {"guild": gid, "text": "틀린 열쇠"}, "nope")
+    chk("열쇠가 틀리면 404", st == 404, st)
+    key = internal_key()
+    chk("서버가 열쇠 파일을 만들어 둔다", bool(key), INTERNAL_KEY_FILE)
+    st, r = internal("GET", "/internal/ping", key=key)
+    chk("열쇠가 맞으면 ping", st == 200 and r.get("ok") is True, (st, r))
+    st, r = internal("POST", "/internal/guild/say", {"guild": gid, "text": "운영자  알림입니다"}, key)
+    ea, eb = recv(sa, 3), recv(sb, 3)
+    chk("보내면 붙어 있는 길드원 모두에게 바로 온다 (알림 줄, 보낸 사람 없음, 빈칸 하나로)",
+        st == 200 and isinstance(ea, dict) and ea == eb and ea.get("t") == "chat" and ea["m"]["system"] is True
+        and ea["m"]["userId"] is None and ea["m"]["body"] == "운영자 알림입니다" and ea["m"]["id"] == r.get("id"),
+        (st, r, ea, eb))
+    st, hist = call("GET", "/api/guild/chat?after=%d" % (r.get("id", 1) - 1), token=tb)
+    chk("  폴링으로도 같은 줄", [m["body"] for m in hist.get("messages", [])] == ["운영자 알림입니다"], hist)
+    st, _r = internal("POST", "/internal/guild/say", {"guild": 10 ** 9, "text": "없는 길드"}, key)
+    chk("없는 길드는 404", st == 404, st)
+    st, _r = internal("POST", "/internal/guild/say", {"guild": gid, "text": "   "}, key)
+    chk("빈 말은 400", st == 400, st)
+    chk("  그 사이 아무것도 안 갔다", recv(sa, 0.8) is None)
 
     print("\n=== 너무 많이 붙으면 ===")
     more = [ws(ta), ws(ta)]
