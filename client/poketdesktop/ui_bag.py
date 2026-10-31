@@ -220,6 +220,8 @@ def item_desc(item):
         return ("레벨이 %d 오른다. 조건이 맞으면 그 자리에서 진화한다."
                 % int(eff.get("amount", 1)))
     if kind == "stone":
+        if eff.get("swap") and item.get("desc"):
+            return item["desc"]          # 루나아라 변경권 (2.0.1) - 진화가 아니라 종을 바꾼다
         who = item.get("evolves") or []
         if not who:
             out = "특정 포켓몬을 진화시키는 돌이다."

@@ -147,6 +147,7 @@ EXTRA = [
     # 아니라 effect 의 swap 으로 바꾼다 (item_routes._use_swap).
     {
         "id": "LUNALATICKET", "ident": "lunala-ticket",
+        "custom": True,
         "kr": "루나아라 변경권", "en": "Lunala Ticket",
         "cat": "misc", "cost": 0, "sell": 0, "buyable": False,
         "desc": "솔가레오에게 쓰면 루나아라로 바뀌는 표. 레벨 · 개체값 · 성격 · 친밀도는 그대로이고,"
