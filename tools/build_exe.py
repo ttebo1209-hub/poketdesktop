@@ -20,6 +20,8 @@ ROOT = os.path.dirname(HERE)
 sys.path.insert(0, ROOT)
 
 from common.version import VERSION            # noqa: E402
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import skin_modules                           # noqa: E402
 
 # GitHub 릴리스는 첨부파일 이름의 한글을 지워버린다. 파일명은 ASCII 로 둔다.
 # (창 제목과 프로그램 이름은 그대로 한글이다)
@@ -134,8 +136,9 @@ def build(onedir=False):
         # 빠지면 오류 없이 채팅이 2초 폴링으로만 돈다 (눈에 안 띄는 고장).
         "--hidden-import", "websocket",
         # 화면 테마 (skins/). 테마마다 화면 파일을 이름으로 불러서(importlib) PyInstaller 가 못 본다 -
-        # 통째로 넣는다. 테마의 글꼴 파일도 같이 (skins.font_dir 이 poketdesktop/fonts 를 본다).
-        "--collect-submodules", "poketdesktop.skins",
+        # 파일마다 하나씩 넣는다 (skin_modules - --collect-submodules 는 2.0.0 에서 0개를 모았다).
+        # 테마의 글꼴 파일도 같이 (skins.font_dir 이 poketdesktop/fonts 를 본다).
+    ] + skin_modules.hidden_imports() + [
         "--add-data", os.path.join(ROOT, "client", "poketdesktop", "fonts") + os.pathsep
         + os.path.join("poketdesktop", "fonts"),
         # 안 쓰는 무거운 것들은 뺀다
@@ -162,6 +165,8 @@ def build(onedir=False):
         exe = os.path.join(ROOT, "dist", NAME + ".exe")
     if not os.path.exists(exe):
         print("  실행 파일이 안 만들어졌습니다")
+        return 1
+    if not skin_modules.check(exe):
         return 1
     if onedir:
         # 폴더째 zip 으로 묶는다. 받는 사람은 풀고 exe 를 누르면 된다.

@@ -60,6 +60,8 @@ ROOT = os.path.dirname(HERE)
 sys.path.insert(0, ROOT)
 
 from common.version import VERSION            # noqa: E402
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import skin_modules                           # noqa: E402
 
 # 번들 이름은 사람이 보는 이름이라 한글로 둔다. zip 파일 이름은 ASCII 다 -
 # GitHub 릴리스가 첨부파일 이름의 한글을 지워 버린다.
@@ -418,8 +420,9 @@ def build():
         # 빠지면 오류 없이 채팅이 2초 폴링으로만 돈다 (눈에 안 띄는 고장).
         "--hidden-import", "websocket",
         # 화면 테마 (skins/). 테마마다 화면 파일을 이름으로 불러서(importlib) PyInstaller 가 못 본다 -
-        # 통째로 넣는다. 테마의 글꼴 파일도 같이 (skins.font_dir 이 poketdesktop/fonts 를 본다).
-        "--collect-submodules", "poketdesktop.skins",
+        # 파일마다 하나씩 넣는다 (skin_modules - --collect-submodules 는 2.0.0 에서 0개를 모았다).
+        # 테마의 글꼴 파일도 같이 (skins.font_dir 이 poketdesktop/fonts 를 본다).
+    ] + skin_modules.hidden_imports() + [
         "--add-data", os.path.join(ROOT, "client", "poketdesktop", "fonts") + os.pathsep
         + os.path.join("poketdesktop", "fonts"),
         # 맥 전용. 이것들이 빠지면 창이 투명해지지 않고 메뉴 막대에
@@ -462,6 +465,8 @@ def build():
     exe = os.path.join(app_path, "Contents", "MacOS", APP_NAME)
     if not os.path.exists(exe):
         print("  번들 안에 실행 파일이 없습니다: %s" % exe)
+        return 1
+    if not skin_modules.check(exe):
         return 1
     # 서명하기 전에 이름을 ASCII 로 바꾼다 (EXEC_NAME 의 설명을 보라).
     ascii_exe = os.path.join(app_path, "Contents", "MacOS", EXEC_NAME)
