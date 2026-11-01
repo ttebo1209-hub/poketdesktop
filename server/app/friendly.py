@@ -97,6 +97,11 @@ def _name(uid):
     return r["username"] if r else "?"
 
 
+def _held_why(uid):
+    """친선전 팀(실시간과 같다 - 랭크 팀, 없으면 바탕화면 파티)이 같은 도구 규칙에 걸리면 까닭 (pvp.held_why)."""
+    return pvp.held_why(pvp.ranked_team(uid), "랭크 팀" if pvp.team_ids(uid) else "바탕화면 파티")
+
+
 def _scene(fight):
     """판의 '장면' 번호. 이것이 같으면 구경꾼에게 새로 보여 줄 것이 없다."""
     return (fight.get("turn"), fight.get("step"), bool(fight.get("over")))
@@ -194,6 +199,9 @@ def seek(uid, on, now=None):
             raise ValueError("이미 진행 중인 실시간 배틀이 있습니다.")
         if not pvp.ranked_team(uid):
             raise ValueError("데리고 다니는 포켓몬이 없습니다.")
+        why = _held_why(uid)                 # 같은 도구는 한 팀에 한 마리 (2.0.2)
+        if why:
+            raise ValueError(why)
     name = _name(uid)
     me = _who(uid, name)
     with _lock:
@@ -242,6 +250,11 @@ def accept(uid, other, now=None):
         raise ValueError("그 길드원은 지금 상대를 구하고 있지 않습니다.")
     if full:
         raise ValueError(full_text())
+    # 받는 사람은 그 자리에서 누른다 - 겹쳐 있으면 막는다 (2.0.2). 구해 둔 사람이 그 뒤에 바꾼 것은 판에서만 뺀다
+    # (live._team)
+    why = _held_why(uid)
+    if why:
+        raise ValueError(why)
     # 판이 열리면 live 가 on_live 를 부른다 - 거기서 두 사람의 '상대 구함' 을 걷고, 건 사람의
     # 카드를 '진행 중' 으로 바꾼다.
     row = live.open_direct(other, uid)       # 안 되면 ValueError (이미 배틀 중, 팀이 없다 ...)

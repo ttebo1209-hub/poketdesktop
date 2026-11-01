@@ -127,6 +127,20 @@ def main():
             True)
         U.close_all()
 
+    print("\n=== 넘긴 자리에 뜬다 ===")
+    # 윈도우에서 테두리 없는 창에 geometry 뒤 -topmost 를 직접 걸면 화면 왼쪽 위 (0, 0) 으로 튄다. 화면 테마의
+    # 펼침 메뉴(박스 고르기 ...)가 왼쪽 위에 떴다 (2026-11-01). 생성자 안의 순서 그대로 재현해야 하므로 사이에
+    # update 를 끼우지 않는다.
+    m4 = U.PopupMenu(root, ROWS, 400, 300)
+    root.update()
+    got = (m4.win.winfo_rootx(), m4.win.winfo_rooty())
+    chk("메뉴가 넘긴 자리 (400, 300) 에 뜬다", abs(got[0] - 400) <= 2 and abs(got[1] - 300) <= 2, got)
+    bx1, by1, _bx2, _by2 = U.all_screens(root)
+    cgot = (m4.catcher.winfo_rootx(), m4.catcher.winfo_rooty())
+    chk("바깥 누름을 받는 덮개가 모든 화면의 왼쪽 위부터 덮는다", abs(cgot[0] - bx1) <= 2 and abs(cgot[1] - by1) <= 2,
+        (cgot, (bx1, by1)))
+    U.close_all()
+
     print("\n=== 글꼴이 커져도 글이 안 눌린다 ===")
     # 줄 높이를 픽셀로 박아 두면 글꼴을 키웠을 때 세로로 눌린다.
     m3 = U.PopupMenu(root, ROWS, 400, 300)

@@ -37,6 +37,15 @@ def start(ctx=Depends(deps.current)):
     if not party:
         raise HTTPException(409, "데리고 다니는 포켓몬이 없습니다.")
     try:
+        boss.next_fight(uid, party)    # 지금 악당이 없거나 오늘 이미 물리쳤으면 그 까닭이 먼저다 (도구 겹침보다)
+    except LookupError as e:
+        raise HTTPException(404, str(e))
+    except ValueError as e:
+        raise HTTPException(409, str(e))
+    why = pvp.held_why(party)          # 같은 도구는 한 팀에 한 마리 (2.0.2, 관장과 같다). 간부 · 전설 팀은 자료 그대로
+    if why:
+        raise HTTPException(409, why)
+    try:
         region, tid, tb, events = boss.start(
             uid, party, zring=gimmick.has_zring(uid), keystone=mega.has_keystone(uid))
     except LookupError as e:

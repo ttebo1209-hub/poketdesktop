@@ -97,11 +97,25 @@ def joker_line(st):
 
 
 def reward_line(st):
-    bits = []
-    for r in st.get("rewards") or []:
-        bits.append(("%d위 %d" % (r["rank"], r["coins"])) if r.get("rank") else "그 밖 %d" % r["coins"])
-    out = "보상(길드 코인, 한 번이라도 공격한 길드원): %s · 1위 길드에는 칭호 '%s'" % (
-        " · ".join(bits), st.get("title") or "")
+    rewards = st.get("rewards") or []
+    if any("deco" in r for r in rewards):
+        # 시즌 5 결산 보상 (2.0.2): 순위마다 길드 코인 + 꾸미기 + 랜덤 기술머신 뽑기권
+        bits = []
+        for r in rewards:
+            one = "%s 코인 %d · %s" % ("%d위" % r["rank"] if r.get("rank") else "그 밖", r["coins"], r.get("deco") or "")
+            if r.get("tm"):
+                one += " · 뽑기권 %d장" % r["tm"]
+            bits.append(one)
+        out = "보상(한 번이라도 공격한 길드원): %s / 1위 길드에는 칭호 '%s'" % (" / ".join(bits), st.get("title") or "")
+        act = st.get("tmActive") or {}
+        out += ("\n뽑기권은 랜덤 기술머신 뽑기권 - 공격에서 이긴 길드원만 받습니다. 활약 보상: 공격에서 %d번 이상 이기면 "
+                "순위와 상관없이 %d장 (순위 몫이 있으면 거기에 더)" % (int(act.get("wins") or 3), int(act.get("count") or 1)))
+    else:
+        bits = []
+        for r in rewards:
+            bits.append(("%d위 %d" % (r["rank"], r["coins"])) if r.get("rank") else "그 밖 %d" % r["coins"])
+        out = "보상(길드 코인, 한 번이라도 공격한 길드원): %s · 1위 길드에는 칭호 '%s'" % (
+            " · ".join(bits), st.get("title") or "")
     c = st.get("contrib")
     if c:
         out += ("\n기여 보상(판이 끝나면 바로): 공격에서 이기면 %d · 조커를 이기면 %d · 내 칸이 상대를 다 "
@@ -648,8 +662,10 @@ class WarTab(object):
         self.rank_box.pack(fill="x")
         self._fill_ranking()
         if st.get("phase") == "done":
-            self._text(c, "길드전이 끝났습니다. 보상(길드 코인)은 바로 들어갔고, 1위 길드의 칭호는 선물함에 있습니다.",
-                       fg=U.FG_FAINT, font=U.FONT_XS, pady=(0, 10))
+            done = ("길드전이 끝났습니다. 길드 코인은 바로 들어갔고, 꾸미기 · 기술머신 뽑기권 · 1위 길드의 칭호는 선물함에 "
+                    "있습니다." if any("deco" in r for r in st.get("rewards") or [])
+                    else "길드전이 끝났습니다. 보상(길드 코인)은 바로 들어갔고, 1위 길드의 칭호는 선물함에 있습니다.")
+            self._text(c, done, fg=U.FG_FAINT, font=U.FONT_XS, pady=(0, 10))
 
     def _fill_ranking(self):
         box = self.rank_box

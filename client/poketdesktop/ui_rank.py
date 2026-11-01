@@ -364,8 +364,10 @@ class RankWindow(object):
             # 10/22: 같은 종도 한 마리 (server/app/pvp.SAME_SPECIES_MAX) - 전설 제한과 같은 곳에 건다
             text.append("같은 포켓몬은 한 팀에 %d마리까지 (랭크·친구·관장·레이드·길드전)" % r["sameSpeciesMax"])
         if r.get("sameHeldMax"):
-            # 시즌 5: 같은 지닌 도구는 랭크 팀에 한 마리 (server/app/pvp.SAME_HELD_MAX). 시즌 4·옛 서버는 칸이 없다
-            text.append("같은 지닌 도구는 랭크 팀에 %d마리까지 (메가스톤·Z크리스탈 포함, 랭크만)" % r["sameHeldMax"])
+            # 시즌 5: 같은 지닌 도구는 한 팀에 한 마리 (server/app/pvp.SAME_HELD_MAX) - 2.0.2 부터 모든 팀 배틀.
+            # 시즌 4·옛 서버는 칸이 없다
+            text.append("같은 지닌 도구는 한 팀에 %d마리까지 (메가스톤·Z크리스탈 포함, 랭크·친구·실시간·관장·악당·레이드·길드전)"
+                        % r["sameHeldMax"])
         pr = r.get("practice") or {}
         if pr.get("after"):
             # 하루 20판 뒤의 랜덤 배틀 (새 서버만 싣는다)

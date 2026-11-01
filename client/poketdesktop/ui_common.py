@@ -1801,7 +1801,12 @@ class PopupMenu(object):
         cat.bind("<Button-1>", lambda e: self.close())
         for seq in ("<Button-2>", "<Button-3>"):
             cat.bind(seq, lambda e: self.close())
-        cat.attributes("-topmost", True)
+        if sys.platform.startswith("win"):
+            PLAT.raise_above(cat)          # -topmost 를 직접 걸면 윈도우에서 (0, 0) 으로 튄다 (_place 와 같다)
+        else:
+            # 맥은 예전 그대로 - 만들자마자 걸면 씹혀서 덮개가 보통 층이고, 바깥 누름은 아래 창 · 다른 앱으로 간다
+            # (닫기는 _watch 가 한다). raise_above 로 진짜 위로 올리면 바깥 첫 누름을 덮개가 먹는다
+            cat.attributes("-topmost", True)
         self.catcher = cat
 
         win = tk.Toplevel(self.root)
@@ -1882,7 +1887,10 @@ class PopupMenu(object):
         x = max(sx1 + 4, min(int(x), sx2 - w - 4))
         y = max(sy1 + 2, min(int(y), sy2 - h - 8))
         win.geometry("%dx%d+%d+%d" % (w, h, x, y))
-        win.attributes("-topmost", True)
+        # **PLAT.raise_above 로 건다.** 윈도우에서 테두리 없는 창에 geometry 뒤 -topmost 를 직접 걸면 창이 화면 왼쪽
+        # 위 (0, 0) 으로 튄다 (1.0.12 의 설명 말풍선과 같은 버그). 기본 화면은 윈도우에서 tk.Menu 를 써서 안 드러났고,
+        # 늘 이 메뉴를 쓰는 화면 테마(박스 고르기 · 타입 · 옮기기 ...)에서 메뉴가 왼쪽 위에 떴다 (2026-11-01 사용자).
+        PLAT.raise_above(win)
         win.lift()
 
     # ---------------- 닫기 ----------------

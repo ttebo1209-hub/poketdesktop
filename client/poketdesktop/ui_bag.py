@@ -260,8 +260,9 @@ def item_desc(item):
         return out
     if kind == "tmticket":
         out = item.get("desc") or "아직 없는 기술머신 하나가 나온다."
-        return out + ("\n\n랭크 시즌 보상으로만 받는다. 가진 기술머신은 나오지 않는다 - "
-                      "뽑을 것이 없으면 쓸 수 없고 표는 남는다.")
+        # 랜덤 뽑기권은 2.0.2 부터 길드전 결산 보상으로도 받는다 (타입 확정은 랭크 챔피언 것 그대로)
+        return out + ("\n\n%s 받는다. 가진 기술머신은 나오지 않는다 - 뽑을 것이 없으면 쓸 수 없고 표는 남는다."
+                      % ("랭크 시즌 보상으로만" if eff.get("pickType") else "랭크 시즌 보상과 길드전 보상으로"))
     if kind == "ball":
         return "야생 포켓몬을 만났을 때 던지는 볼이다. 가방에서는 쓸 수 없다."
     if kind == "sell":

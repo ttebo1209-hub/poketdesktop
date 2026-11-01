@@ -225,6 +225,39 @@ def button_shape(cv, x1, y1, x2, y2, body, line, tags=(), down=False):
     return rrect(cv, x1, y1 + d, x2, y2 - 2 + d, r, fill=body, outline=line, width=1, tags=tags)
 
 
+# 단추 뗌은 도형이 아니라 캔버스 전체로 받는다 (CButton 설명). 캔버스마다 이 이름의 bindtag 를 맨 앞에 붙인다.
+_REL_TAG = "PoketCButton"
+
+
+def _hook_release(cv):
+    if _REL_TAG not in cv.bindtags():
+        cv.bindtags((_REL_TAG,) + tuple(cv.bindtags()))
+    root = cv._root()
+    if not getattr(root, "_poket_cbtn_hooked", False):
+        cv.bind_class(_REL_TAG, "<ButtonPress-1>", _canvas_press)
+        cv.bind_class(_REL_TAG, "<ButtonRelease-1>", _canvas_release)
+        root._poket_cbtn_hooked = True
+
+
+def _canvas_press(e):
+    # 도형 바인딩(CButton._press)이 먼저 돈다. 이번 누름이 단추를 누른 게 아니면, 뗌을 못 받고 남은 단추를 푼다
+    cv = e.widget
+    if not isinstance(cv, tk.Canvas):             # 없어진 창이면 이름 글자만 온다
+        return
+    if not getattr(cv, "_cbtn_fresh", False):
+        cv._cbtn_armed = None
+    cv._cbtn_fresh = False
+
+
+def _canvas_release(e):
+    cv = e.widget
+    btn = getattr(cv, "_cbtn_armed", None) if isinstance(cv, tk.Canvas) else None
+    if btn is None:
+        return
+    cv._cbtn_armed = None
+    btn._release(e)
+
+
 class CButton(object):
     """캔버스에 그린 DP 단추. 자리는 layout() 으로, 글씨 · 켜짐은 configure() 로 (기본 단추와 같은 말).
 
@@ -233,6 +266,11 @@ class CButton(object):
     **올리고 누를 때는 도형을 지우지 않는다** (빛깔을 바꾸고 옮기기만 한다). 마우스 밑의 도형을 지우고 새로
     그리면 Tk 가 마우스 밑을 다시 찾아 새 도형에 <Enter> 를 또 보내고, 그러면 또 그리고 - 끝없이 돈다
     (root.update() 가 안 돌아온다). 지우고 다시 그리는 것은 layout() · configure() 뿐이다.
+
+    **뗌은 캔버스 전체로 받는다** (_hook_release). 누른 채 있는 동안 도트 · 서버 답이 와서 판을 다시 그리면
+    누른 도형이 지워지는데, 그러면 Tk 는 뗌을 어느 도형에도 보내지 않는다 - 도형에 건 뗌으로는 그 클릭이
+    먹힌다 (2026-11-01: 박스 ◀ ▶ 를 빨리 넘길 때 · 요약 칸 단추를 누르는 사이 유대 카드가 올 때). 그래서
+    누른 단추를 캔버스에 적어 두고, 뗀 자리가 그 단추 안이면 누른 것으로 본다.
     """
 
     def __init__(self, cv, text, command, kind="blue", spec=None, tag=None):
@@ -249,8 +287,8 @@ class CButton(object):
         self._body_id = None
         self._shift = 0
         self._binds = [(seq, cv.tag_bind(self.tag, seq, fn)) for seq, fn in (
-            ("<Enter>", self._enter), ("<Leave>", self._leave), ("<Button-1>", self._press),
-            ("<ButtonRelease-1>", self._release))]
+            ("<Enter>", self._enter), ("<Leave>", self._leave), ("<Button-1>", self._press))]
+        _hook_release(cv)
 
     def want_width(self, pad=28):
         return tkfont_of(self.cv, self.spec).measure(self.text) + pad
@@ -338,12 +376,25 @@ class CButton(object):
         if self.enabled:
             self._down = True
             self._state()
+            self.cv._cbtn_armed = self
+            self.cv._cbtn_fresh = True
 
-    def _release(self, _e):
-        was = self._down
+    def _release(self, e):
+        """캔버스가 받은 뗌 (_canvas_release). 누른 뒤 판을 다시 그려 _down 이 풀렸어도 뗀 자리가 단추 안이면 누른 것."""
         self._down = False
         self._state()
-        if was and self.enabled and self.command:
+        if not (self.enabled and self.command and self.box):
+            return
+        try:
+            # 누른 사이 판을 통째로 새로 지어(cv.delete('all')) 이 단추가 다시 안 그려졌으면 판에 없는 단추다 - 그 자리에
+            # 새로 만든 다른 단추(꺼져 있을 수도 있다)의 클릭을 옛 단추가 가로채지 않게 한다
+            if not self.cv.find_withtag(self.tag):
+                return
+            x, y = self.cv.canvasx(e.x), self.cv.canvasy(e.y)
+        except (tk.TclError, AttributeError):
+            return
+        x1, y1, x2, y2 = self.box
+        if x1 <= x <= x2 and y1 <= y <= y2:
             self.command()
 
     def invoke(self):

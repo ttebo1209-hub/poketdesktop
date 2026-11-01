@@ -277,17 +277,23 @@ def too_many_same(species):
 
 
 # ---- 같은 지닌 도구 (시즌 5, season.rules_v5) ----
-# 랭크 팀 안에서 같은 도구는 한 마리만 (10/29 사용자: 기합의띠를 여러 마리에게 들려 보내는 것 막기).
+# 한 팀 안에서 같은 도구는 한 마리만 (10/29 사용자: 기합의띠를 여러 마리에게 들려 보내는 것 막기).
 # 메가스톤·Z크리스탈도 도구라 같은 것 둘이면 걸린다. 안 지닌 것(None)은 상관없다.
 #
-# **랭크(랜덤 배틀)에만 건다.** 친구·실시간·관장·레이드·길드전 방어팀은 그대로다 (사용자가 랭크만 말했다).
+# 처음(2.0.0)에는 랭크(랜덤 배틀)에만 걸었다. **2.0.2 부터 모든 팀 배틀에 건다** (11/01 사용자: "도구 중복 금지는
+# 모든 배틀에 적용해야 해 - 길드전, 랭크, 실시간 대전, 관장 등"): 랭크 · 연습판 · 친구 배틀 · 실시간 · 길드 친선전 ·
+# 관장 · 악당 · 레이드 · 길드전. 바탕화면 야생 배틀은 팀 대 팀이 아니라 그대로다 (전설 제한과 같다).
+# 관장 · 악당 같은 NPC 팀은 자료 그대로다 - 사람 팀에 거는 규칙이다 (길드전 AI 수비대는 사람 칸을 대신 지키므로 건다).
+#
 # 같은 종처럼 '뒤의 것이 쉰다' 로 하지 않는다 - 도구는 팀을 등록한 뒤에도 가방·박스에서 바꿀 수 있어서
-# 쉬게 하면 모르는 사이에 팀이 다섯 마리가 된다. 그래서
-#   · 등록할 때 거절한다 (set_team)
-#   · 거는 쪽은 겹쳐 있으면 랜덤 배틀을 못 건다 - 무엇을 고칠지 알려 준다 (can_start / held_short)
-#   · 걸려온 쪽(상대)은 후보에서 빼지 않는다. 자는 사이에 겹친 것을 고칠 길이 없는데 빼면 그 사람만
-#     조용히 매칭에서 사라진다. 대신 **그 판에서만** 겹친 도구 중 뒤의 것을 안 지닌 셈으로 싸운다
-#     (strip_same_held - 사본만 고친다, 원본 도구는 그대로)
+# 쉬게 하면 모르는 사이에 팀이 다섯 마리가 된다. 그래서 어디서든 규칙은 하나다:
+#   · **그 자리에서 누르는 사람**은 겹쳐 있으면 막고 무엇을 고칠지 알린다 (held_why) - 랜덤 배틀 · 친구 배틀을 거는
+#     사람, 실시간을 초대하는 사람, 친선전 상대를 구하거나 받는 사람, 관장 · 악당에 도전하는 사람, 레이드에 들어가는
+#     사람. 등록하는 팀(랭크 · 길드전)은 등록할 때 거절한다.
+#   · **자리에 없거나 고칠 수 없는 쪽**은 막지 않고 **그 판에서만** 겹친 도구 중 뒤의 것을 안 지닌 셈으로 싸운다
+#     (strip_same_held - 사본만 고친다, 원본 도구는 그대로): 랜덤 · 친구 배틀의 상대, 실시간을 받는 사람, 레이드를
+#     시작할 때의 방 사람들, 길드전의 굳힌 팀(전쟁 중에는 팀을 못 바꾼다) · AI 수비대. 자는 사이에 겹친 것을 고칠 길이
+#     없는데 빼면 그 사람만 조용히 매칭에서 사라진다.
 # 시즌 4 에는 아무것도 바뀌지 않는다 - 모두 season.rules_v5() 를 그때그때 본다.
 SAME_HELD_MAX = 1
 
@@ -352,6 +358,37 @@ def strip_same_held(mons):
             seen[k] = seen.get(k, 0) + 1
         out.append(m)
     return out
+
+
+def held_why(mons, where="바탕화면 파티"):
+    """그 자리에서 누르는 사람의 팀(mons = 실제로 나가는 팀)이 같은 도구 규칙에 걸리면 막는 까닭 한 줄,
+    아니면(시즌 4 포함) None. where 는 그 팀을 부르는 말 ('바탕화면 파티' · '랭크 팀' · '길드전 공격팀' ...)."""
+    if not held_rule_on():
+        return None
+    dupes = same_held(mons)
+    if not dupes:
+        return None
+    return ("%s에서 같은 도구를 둘 이상이 지니고 있습니다: %s. 배틀에서는 같은 도구를 한 팀에 %d마리만 지닐 수 있어요"
+            " - 하나만 남기고 도구를 바꾸거나 빼 주세요." % (where, same_held_text(dupes), SAME_HELD_MAX))
+
+
+def strip_held(mons):
+    """자리에 없는 쪽에 거는 것: 규칙이 켜졌으면 strip_same_held 한 사본과 도구가 빠진 것 목록. 꺼졌으면 그대로.
+    (팀, [도구가 빠진 포켓몬 (원래 도구를 지닌 원본)])."""
+    if not held_rule_on():
+        return mons, []
+    out = strip_same_held(mons)
+    lost = [a for a, b in zip(mons or [], out) if _held_key(a) and not _held_key(b)]
+    return out, lost
+
+
+def strip_note(lost):
+    """판 처음에 알리는 한 줄 (내 팀에서 도구가 빠진 것). 없으면 빈 문자열."""
+    if not lost:
+        return ""
+    dex = deps.dex()
+    return ("같은 도구는 한 팀에 %d마리만 지닐 수 있어서 %s 은(는) 이번 판에서 도구 없이 싸웁니다."
+            % (SAME_HELD_MAX, ", ".join("%s(%s)" % (_mon_name(m, dex), items.name_of(_held_key(m))) for m in lost)))
 
 
 def held_short(uid):
@@ -529,14 +566,13 @@ def run_match(a_uid, b_uid, kind="random", seed=None, practice=None):
     dex = deps.dex()
     if kind == "random":
         a_mons, b_mons = capped(ranked_team(a_uid)), capped(ranked_team(b_uid))
-        if held_rule_on():
-            # 시즌 5: 같은 도구는 한 마리만. 거는 쪽은 can_start 가 이미 막았고, 걸려온 쪽은 후보에서 안 빼는
-            # 대신 이 판에서만 뒤의 것을 안 지닌 셈으로 싸운다 (SAME_HELD_MAX 의 설명). 양쪽 다 거는 것은
-            # can_start 를 거치지 않고 부르는 곳(검사·운영 손질)에서도 같은 판이 되게 하려고다.
-            a_mons, b_mons = strip_same_held(a_mons), strip_same_held(b_mons)
     else:
         # 친구 배틀도 전설·환상은 한 마리 (시즌 3)
         a_mons, b_mons = battle_party(a_uid)[0], battle_party(b_uid)[0]
+    # 시즌 5: 같은 도구는 한 마리만 (2.0.2 부터 친구 배틀도). 거는 쪽은 can_start 가 이미 막았고, 걸려온 쪽은 후보에서
+    # 안 빼는 대신 이 판에서만 뒤의 것을 안 지닌 셈으로 싸운다 (SAME_HELD_MAX 의 설명). 양쪽 다 거는 것은 can_start 를
+    # 거치지 않고 부르는 곳(검사·운영 손질)에서도 같은 판이 되게 하려고다.
+    a_mons, b_mons = strip_held(a_mons)[0], strip_held(b_mons)[0]
     if not a_mons or not b_mons:
         raise ValueError("양쪽 다 데리고 다니는 포켓몬이 있어야 합니다.")
 
@@ -988,6 +1024,11 @@ def can_start(uid, kind="random", practice_ok=False):
         left = random_cooldown_left(uid)
         if left:
             return "랜덤 배틀은 %d초 뒤에 다시 걸 수 있습니다." % left
+    else:
+        # 친구 배틀도 같은 도구는 한 마리 (2.0.2) - 거는 사람은 실제로 나가는 팀(전설 · 같은 종 제한 뒤)으로 센다
+        why = held_why(battle_party(uid)[0])
+        if why:
+            return why
     return None
 
 

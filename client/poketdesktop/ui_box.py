@@ -1963,14 +1963,15 @@ class BoxWindow(object):
     DRAG_SLOP = 6
 
     def _drag_press(self, pid, e):
-        self._drag = {"pid": pid, "y": e.y_root, "moved": False}
+        self._drag = {"pid": pid, "x": e.x_root, "y": e.y_root, "moved": False}
 
     def _drag_move(self, e):
         d = getattr(self, "_drag", None)
         if not d or self.multi:
             return                         # 여러 마리 고르기 중에는 끌어서 바꾸지 않는다
         if not d["moved"]:
-            if abs(e.y_root - d["y"]) < self.DRAG_SLOP:
+            # 옆으로도 본다 - 테마 박스는 파티 칸이 박스 칸 옆이라 곧게 옆으로 끌면 세로로는 안 움직인다
+            if max(abs(e.x_root - d["x"]), abs(e.y_root - d["y"])) < self.DRAG_SLOP:
                 return
             d["moved"] = True
             try:

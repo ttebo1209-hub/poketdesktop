@@ -315,6 +315,12 @@ def _can_play(uid, now=None):
                                           config.RAID_MIN_PARTY))
         raise ValueError("포켓몬을 %d마리 이상 데리고 와야 합니다."
                          % config.RAID_MIN_PARTY)
+    # 같은 도구는 한 팀에 한 마리 (2.0.2) - 들어가는 사람은 그 자리에서 고칠 수 있으니 막는다. 들어간 뒤에 바꾼 것은
+    # 시작할 때 판에서만 뺀다 (begin - 거기서 막으면 그 사람이 방에서 지워진다)
+    from . import pvp
+    why = pvp.held_why(party_of(uid))
+    if why:
+        raise ValueError(why)
 
 
 def open_lobby(code=None, now=None):
@@ -500,6 +506,7 @@ def can_start(row):
 
 def begin(row, now=None):
     """판을 연다. 참가 횟수는 **여기서** 깎인다 (모이다 취소되면 안 깎인다)."""
+    from . import pvp
     here = [m for m in members(row["id"]) if not m["left_at"]]
     players, dropped = [], []
     for m in here:
@@ -507,6 +514,7 @@ def begin(row, now=None):
         if len(mons) < config.RAID_MIN_PARTY:
             dropped.append(m)
             continue
+        mons = pvp.strip_held(mons)[0]           # 같은 도구는 앞의 한 마리만 (2.0.2 - 로비에서 바꾼 것은 판에서만)
         players.append((m["user_id"], m["name"],
                         [RB.leveled(x, config.RAID_TEAM_LEVEL) for x in mons]))
     for m in dropped:

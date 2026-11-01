@@ -174,9 +174,16 @@ def season5(a4, b4):
     chk("원본 도구는 그대로", [r["held"] for r in mons_of(b)][:4] == ["LIFEORB", "CHOICESCARF", "LIFEORB", "LIFEORB"],
         [r["held"] for r in mons_of(b)])
     chk("판은 끝까지 간다", out.get("matchId") and out["turns"] > 0, out.get("turns"))
+    # 2.0.2: 친구 배틀에도 건다 (모든 팀 배틀 - 11/01 사용자). 상대는 그 판에서만 뺀다, 거는 쪽은 막는다
     del SEEN[:]
     pvp.run_match(a, b, kind="friend", seed=8)
-    chk("친구 배틀은 그대로 (랭크만)", held_of(SEEN[-1][1]).count("LIFEORB") == 3, held_of(SEEN[-1][1]))
+    chk("친구 배틀도 상대는 그 판에서만 앞의 하나만 지닌다 (2.0.2)",
+        held_of(SEEN[-1][1])[:4] == ["LIFEORB", "CHOICESCARF", None, None], held_of(SEEN[-1][1]))
+    chk("  원본 도구는 그대로", [r["held"] for r in mons_of(b)][:4] == ["LIFEORB", "CHOICESCARF", "LIFEORB", "LIFEORB"],
+        [r["held"] for r in mons_of(b)])
+    why = pvp.can_fight(b, a, "friend")
+    chk("친구 배틀을 거는 쪽이 겹치면 못 건다 - 무엇을 고칠지 알린다",
+        why and "생명의구슬" in why and "바탕화면 파티" in why, why)
 
 
 def main():

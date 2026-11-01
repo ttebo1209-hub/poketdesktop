@@ -12,11 +12,12 @@
      Tk 가 새 도형에 <Enter> 를 또 보내 root.update() 가 안 돌아왔다).
   3. 가방: 주머니를 고르면 그 분류만 보이고, 찾는 말을 넣으면 모든 주머니에서 찾는다.
   4. 도구를 고르면 설명 띠 · 단추 글씨가 바뀐다. 은색병뚜껑은 능력 칸, 노력치 도구는 노력치 칸.
-  5. 포켓몬 판을 눌러 고르고, '쓰기' 를 누르면 서버에 그 도구 · 그 포켓몬으로 간다.
+  5. 포켓몬 판을 눌러 고르고, '쓰기' 를 누르면 서버에 그 도구 · 그 포켓몬으로 간다. 알림이 떠 있어도 쓰기가 눌린다.
   6. 기술머신 주머니를 누르면 기술머신 칸(DP)으로 넘어간다. 가진 것만 · 전부, 기술머신을 고르면 배울 포켓몬,
      판을 골라 가르치기. 다른 주머니를 누르면 도구 칸의 그 주머니로 돌아간다.
   7. 포켓몬(PC 박스): 칸을 눌러 고르면 요약이 바뀐다. 박스 넘기기 · 찾기, 여러 마리 골라 옮기기,
-     박스 것과 파티 것 맞바꾸기(끌기), 데리고 다니기.
+     박스 것과 파티 것 맞바꾸기(끌기), 데리고 다니기. 진짜 마우스로 파티 안 · 파티 → 박스 끌기, 파티 칸 누르기,
+     옆으로만 끌기, 단추를 누른 사이 판을 다시 그려도 클릭이 가는지.
   8. 상점(프렌들리숍): 분류 메뉴 · 찾기 · 고르기 · 개수(▲▼, 빠른 개수) · 사기는 서버에 그 도구 · 그 개수로.
   9. 도감: 세대 · 잡은 것 · 찾기로 거르고, 줄을 누르면 왼쪽 화면이 그 종. 업적 칸을 열고 닫는다.
  10. 마이페이지(트레이너 카드) · 설정: 게시판 활동 탭 · 쪽 넘기기, 설정의 ◀ ▶ 가 값을 바꾸고 저장한다.
@@ -713,6 +714,47 @@ def click_item(cv, tag):
     cv.event_generate("<ButtonRelease-1>", x=x, y=y)
 
 
+def mid(box):
+    return ((box[0] + box[2]) / 2.0, (box[1] + box[3]) / 2.0)
+
+
+def press_button(root, btn, between=None):
+    """캔버스 단추를 사람처럼 누른다: 올리고 잠깐 둔 뒤 누르고, (between 을 부르고) 뗀다."""
+    cv = btn.cv
+    x, y = mid(btn.box)
+    x, y = int(x - cv.canvasx(0)), int(y - cv.canvasy(0))
+
+    def ev(seq, state=0):
+        cv.event_generate(seq, x=x, y=y, rootx=cv.winfo_rootx() + x, rooty=cv.winfo_rooty() + y, state=state,
+                          when="now")
+    ev("<Motion>")
+    TBL.settle(root, 0.15)
+    ev("<ButtonPress-1>")
+    root.update()
+    if between:
+        between()
+        root.update()
+    ev("<ButtonRelease-1>", 0x100)
+    root.update()
+
+
+def mouse_drag(root, src_cv, p, dst_cv, q, steps=10):
+    """src_cv 의 p 에서 눌러 dst_cv 의 q 까지 끌고 뗀다 (진짜 마우스처럼 - 누른 채 움직인 것은 누른 위젯으로 간다)."""
+    def ev(seq, rx, ry, state=0):
+        src_cv.event_generate(seq, x=int(rx - src_cv.winfo_rootx()), y=int(ry - src_cv.winfo_rooty()),
+                              rootx=int(rx), rooty=int(ry), state=state, when="now")
+    rx0, ry0 = src_cv.winfo_rootx() + p[0], src_cv.winfo_rooty() + p[1]
+    rx1, ry1 = dst_cv.winfo_rootx() + q[0], dst_cv.winfo_rooty() + q[1]
+    ev("<Motion>", rx0, ry0)
+    ev("<ButtonPress-1>", rx0, ry0)
+    root.update()
+    for k in range(1, steps + 1):
+        ev("<Motion>", rx0 + (rx1 - rx0) * k / steps, ry0 + (ry1 - ry0) * k / steps, 0x100)
+        root.update()
+    ev("<ButtonRelease-1>", rx1, ry1, 0x100)
+    root.update()
+
+
 def cv_texts(cv):
     return [cv.itemcget(i, "text") for i in cv.find_all() if cv.type(i) == "text"]
 
@@ -1178,6 +1220,19 @@ def main():
         TBL.wait(root, lambda: bool(api.used), 5)
         chk("쓰기 - 그 도구 · 그 포켓몬으로 간다", api.used and api.used[-1][:2] == ("CARBOS", target), api.used)
         TBL.settle(root, 0.5)
+        # 알림이 떠 있는 동안에도 아래 단추가 눌린다 (금·은은 알림 상자가 메뉴까지 덮어 3초 남짓 안 눌렸다)
+        was_sort = bag.item_sort
+        bag.set_item_sort("count")
+        TBL.settle(root, 0.3)
+        hits, keep = [], bag.use_btn.command
+        bag.use_btn.command = lambda: hits.append(1)
+        try:
+            press_button(root, bag.use_btn)
+        finally:
+            bag.use_btn.command = keep
+        chk("  진짜 마우스: 알림이 떠 있어도 쓰기 단추가 눌린다", hits == [1], (hits, getattr(bag, "_toast_msg", None)))
+        bag.set_item_sort(was_sort)
+        TBL.settle(root, 0.3)
 
         print("6. 기술머신 주머니")
         bag._pick_pocket("tms")
@@ -1317,6 +1372,66 @@ def main():
         bx.exit_multi()
         TBL.settle(root, 0.3)
         chk("  고르기를 끄면 놓아주기 (N마리) 도 숨는다", bx.btn_multi_release.box is None and bx.btn_release.box is not None)
+        # 진짜 마우스로 끈다 (2026-11-01 게시판 #395). 위의 _apply_drop 을 바로 부르는 검사로는 안 보였다: 파티 칸
+        # 도형에만 끌기를 걸어 두었더니, 끄는 동안 판을 다시 그려 그 도형이 지워지면 놓은 것이 안 왔다.
+        TBL.wait(root, lambda: bx._wait is None, 5)
+        TBL.settle(root, 0.3)
+        a, b = bx._party_list[0]["id"], bx._party_list[2]["id"]
+        n = len(api.calls)
+        mouse_drag(root, bx.cv, mid(bx._pslots[a]), bx.cv, mid(bx._pslots[b]))
+        TBL.wait(root, lambda: any(c[0] == "order" for c in api.calls[n:] if isinstance(c, tuple)), 5)
+        order = next((c[1] for c in api.calls[n:] if isinstance(c, tuple) and c[0] == "order"), [])
+        chk("  진짜 마우스: 파티 1번을 3번 칸에 놓으면 둘이 자리를 바꾼다",
+            len(order) >= 3 and order[0] == b and order[2] == a, api.calls[n:])
+        TBL.settle(root, 0.5)
+        TBL.wait(root, lambda: bx._wait is None and bx._page_mons, 5)
+        src, dst = bx._party_list[3]["id"], bx._page_mons[0]["id"]
+        gx, gy = mid(bx._cells[dst])
+        n = len(api.calls)
+        mouse_drag(root, bx.cv, mid(bx._pslots[src]), bx.gcv, (gx, gy - bx.gcv.canvasy(0)))
+        TBL.wait(root, lambda: ("desktop", dst, True) in api.calls[n:], 5)
+        chk("  진짜 마우스: 파티 것을 박스 칸에 놓으면 맞바꾼다",
+            ("desktop", src, False) in api.calls[n:] and ("desktop", dst, True) in api.calls[n:], api.calls[n:])
+        TBL.settle(root, 0.5)
+        pid = bx._party_list[4]["id"]
+        n = len(api.calls)
+        mouse_drag(root, bx.cv, mid(bx._pslots[pid]), bx.cv, mid(bx._pslots[pid]), steps=1)
+        TBL.settle(root, 0.3)
+        chk("  진짜 마우스: 파티 칸을 그냥 누르면 고르기만 한다", bx.sel == pid and not [
+            c for c in api.calls[n:] if isinstance(c, tuple) and c[0] in ("order", "desktop")], (bx.sel, api.calls[n:]))
+        # 곧게 옆으로 끈다 - 파티 칸이 박스 칸 옆이라 세로로는 안 움직인다 (세로만 보던 끌기 판정이 걸렀다)
+        TBL.wait(root, lambda: bx._wait is None and bx._page_mons, 5)
+        TBL.settle(root, 0.4)
+        src = bx._page_mons[0]["id"]
+        gx, gy = mid(bx._cells[src])
+        gy -= bx.gcv.canvasy(0)
+        ry = bx.gcv.winfo_rooty() + gy
+        side = [(p_id, ((x1 + x2) / 2.0, ry - bx.cv.winfo_rooty())) for p_id, (x1, y1, x2, y2) in bx._pslots.items()
+                if bx.cv.winfo_rooty() + y1 + 2 <= ry <= bx.cv.winfo_rooty() + y2 - 2]
+        if side:
+            dst, q = side[0]
+            n = len(api.calls)
+            mouse_drag(root, bx.gcv, (gx, gy), bx.cv, q)
+            TBL.wait(root, lambda: ("desktop", src, True) in api.calls[n:], 5)
+            chk("  진짜 마우스: 박스 칸을 같은 높이의 파티 칸으로 옆으로만 끌어도 맞바꾼다",
+                ("desktop", dst, False) in api.calls[n:] and ("desktop", src, True) in api.calls[n:], api.calls[n:])
+        else:
+            print("  (옆 끌기는 건너뜀 - 박스 첫 칸과 같은 높이의 파티 칸이 없다)")
+        # 누르고 떼는 사이에 판을 다시 그려도 (도트 · 서버 답이 와서) 클릭이 간다. 마우스를 올리고 잠깐 둔 뒤 누른다 -
+        # 플라티나는 올렸을 때 두르는 빛 고리가 누를 때 숨으면서 누름을 풀어 단추가 다 안 눌렸다
+        TBL.wait(root, lambda: bx._wait is None, 5)
+        TBL.settle(root, 0.5)
+        btn = next((b for b in (bx.btn_next, bx.btn_reload, bx.btn_nick) if b.box and b.enabled), None)
+        hits = []
+        if btn is not None:
+            keep = btn.command
+            btn.command = lambda: hits.append(1)
+            try:
+                press_button(root, btn, between=bx._paint)
+            finally:
+                btn.command = keep
+        chk("  진짜 마우스: 단추를 누른 사이 판을 다시 그려도 클릭이 한 번 간다", hits == [1],
+            (btn and btn.text, hits))
 
         print("8. 상점")
         hub.show("shop")

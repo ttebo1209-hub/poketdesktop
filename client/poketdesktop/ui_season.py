@@ -218,9 +218,9 @@ class TeamWindow(object):
         # 같은 종 상한 (10/22). 옛 서버는 안 보낸다 - 그때는 막지 않는다 (서버가 본다).
         self.same_max = int(team["sameSpeciesMax"]) if team.get("sameSpeciesMax") else None
         self.rank_min = None if self.spec else team.get("rankMin")
-        # 같은 지닌 도구 (시즌 5). 시즌 4·옛 서버는 안 보낸다 - 그때는 표시도 막기도 안 한다. 길드전 팀(spec)에는
-        # 안 건다 (서버도 랭크 팀에만 건다).
-        self.held_max = (int(team["sameHeldMax"]) if team.get("sameHeldMax") and not self.spec else None)
+        # 같은 지닌 도구 (시즌 5). 시즌 4·옛 서버는 안 보낸다 - 그때는 표시도 막기도 안 한다. 2.0.2 부터 길드전 팀(spec)
+        # 에도 건다 (서버가 모든 팀 배틀에 건다 - 길드전 팀은 겹치면 저장을 거절한다).
+        self.held_max = int(team["sameHeldMax"]) if team.get("sameHeldMax") else None
         self.registered = bool(team.get("registered"))
         self.picked = [int(i) for i in team.get("ids") or []]
         # 레벨 높은 순. 랭크 팀은 대개 제일 센 애들로 짠다.
@@ -265,8 +265,9 @@ class TeamWindow(object):
         held = self.held_text(self._fighting(self.picked))
         if held:
             # 등록한 뒤 가방·박스에서 도구를 바꿨거나, 랭크 팀 없이 바탕화면 파티로 싸울 때 생긴다
-            out.append(natural("같은 지닌 도구가 겹쳐 랜덤 배틀을 걸 수 없습니다: %s. "
-                               "하나만 남기고 도구를 바꾸거나 빼 주세요." % held))
+            out.append(natural("같은 지닌 도구가 겹쳐 %s: %s. 하나만 남기고 도구를 바꾸거나 빼 주세요."
+                               % ("이대로는 길드전 팀을 저장할 수 없습니다" if self.spec else "랜덤 배틀을 걸 수 없습니다",
+                                  held)))
         return out
 
     def row_info(self, m):
@@ -299,6 +300,11 @@ class TeamWindow(object):
         """지금 고른 팀에 대해 아래 줄에 띄울 말 (글, 빛깔). 할 말이 없으면 빈 글."""
         n = len(self.picked)
         if self.spec:
+            # 길드전 팀: 같은 지닌 도구만 본다 (2.0.2 - 겹치면 서버가 저장을 거절한다)
+            held = self.held_text(self._fighting(self.picked))
+            if held:
+                return natural("같은 지닌 도구가 겹칩니다: %s. 하나만 남기고 도구를 바꾸거나 빼야 저장할 수 있습니다."
+                               % held), U.DANGER
             return "", U.GOOD
         # 마릿수가 모자라 못 거는 것을 먼저 말한다 - 그게 진짜로 막는 까닭이면 도구 이야기에 가리면 안 된다
         if self.rank_min:
@@ -572,8 +578,8 @@ class TeamWindow(object):
                 # 시즌 5: 이미 고른 포켓몬이 같은 도구를 지녔다 - 누가 지녔는지 알려 준다
                 m = by.get(pid)
                 holder = next(by[i] for i in self.picked if self._held(by.get(i)) == self._held(m))
-                return self.say(natural("%s 은(는) %s 이(가) 이미 지니고 있습니다. 랭크 팀에서는 같은 지닌 도구를 "
-                                        "%d마리만 지닐 수 있어요 - 도구를 바꾼 뒤 넣으세요."
+                return self.say(natural("%s 은(는) %s 이(가) 이미 지니고 있습니다. 배틀에서는 같은 지닌 도구를 "
+                                        "한 팀에 %d마리만 지닐 수 있어요 - 도구를 바꾼 뒤 넣으세요."
                                         % (m.get("heldKr") or self._held(m),
                                            (holder.get("info") or {}).get("name", "?"), self.held_max)),
                                 U.ACCENT)

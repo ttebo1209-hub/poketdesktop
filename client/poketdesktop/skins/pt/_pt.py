@@ -276,8 +276,10 @@ class Capsule(K.CButton):
         if self._body_id is None:
             return
         try:
+            # 보일 때도 disabled - 그려지기만 하고 마우스는 안 받는다. 테 없는 다각형도 Tk 는 안쪽을 집어서, normal 이면
+            # 이 고리가 마우스 밑 도형이 되고 누를 때 숨기면 <Leave> 가 와 누름이 풀렸다 (플라티나 단추가 다 안 눌렸다)
             self.cv.itemconfigure(self._body_id,
-                                  state="normal" if (self._hover and self.enabled and not self._down) else "hidden")
+                                  state="disabled" if (self._hover and self.enabled and not self._down) else "hidden")
             want = 2 if (self._down and self.enabled) else 0
             if want != self._shift:
                 self.cv.move(self.tag + "_m", 0, want - self._shift)

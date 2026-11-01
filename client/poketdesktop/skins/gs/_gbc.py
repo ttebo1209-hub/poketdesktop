@@ -376,8 +376,9 @@ class GSBag(object):
             rows.append({"text": name, "command": (lambda k=key: self._pocket_click(k)), "checked": key == now})
         try:
             x0, y0 = self._pk_box
-            x = self.cv.winfo_rootx() + int(x0)
-            y = self.cv.winfo_rooty() + int(y0) + 2
+            # 판 좌표 -> 화면 좌표. 글자를 키워 판이 굴러가 있으면 굴린 만큼 뺀다 (dp/tms.py _menu 와 같다)
+            x = self.cv.winfo_rootx() + int(x0 - self.cv.canvasx(0))
+            y = self.cv.winfo_rooty() + int(y0 - self.cv.canvasy(0)) + 2
         except (tk.TclError, AttributeError):
             return None
         return U.PopupMenu(self.root, rows, x, y, width=200)
@@ -514,9 +515,11 @@ class GSBag(object):
         for btn in menu:
             btn.layout(mx1, my, ix2 - U.h(10), my + rh - U.h(2))
             my += rh
+        self._toast_menu = (mx1, menu) if menu else None
 
     def _paint_toast(self):
-        """잠깐 뜨는 알림: 아래 넓은 상자 자리를 같은 모양의 상자로 통째로 덮는다 (밑의 설명이 비치지 않게)."""
+        """잠깐 뜨는 알림: 아래 넓은 상자 자리를 같은 모양의 상자로 통째로 덮는다 (밑의 설명이 비치지 않게).
+        오른쪽 메뉴는 알림 위로 다시 올린다 - 덮어 두면 알림이 떠 있는 3초 남짓 쓰기 · 팔기 · 가르치기가 안 눌렸다."""
         cv = self.cv
         try:
             cv.delete("toast")
@@ -530,8 +533,13 @@ class GSBag(object):
         tg = ("toast",)
         ix1, iy1, ix2, iy2 = gbox(cv, x1, y1, x2, y2, tags=tg)
         arrow(cv, ix1 + U.h(12), (iy1 + iy2) // 2, U.h(5), tags=tg)
+        menu = getattr(self, "_toast_menu", None)
+        right = menu[0] - U.h(16) if menu else ix2 - U.h(16)
         K.text(cv, ix1 + U.h(28), (iy1 + iy2) // 2, text, font(11), fill=tone(color) if color else INK, anchor="w",
-               width=ix2 - ix1 - U.h(44), tags=tg)
+               width=right - ix1 - U.h(28), tags=tg)
+        for btn in (menu[1] if menu else ()):
+            if btn.box:
+                cv.tag_raise(btn.tag)
 
     # ---- 가운데 목록 상자의 머리 (찾기 칸 · 칩 줄은 부르는 창이)
     def _gs_list_frame(self, cv, x1, y1, x2, y2):

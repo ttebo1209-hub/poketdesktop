@@ -238,8 +238,11 @@ class BoxWindow(Scene, BX.BoxWindow):
         self.gcv.bind("<B1-Motion>", self._drag_move)
         self.gcv.bind("<ButtonRelease-1>", self._drag_release)
         self.cv.tag_bind("pslot", "<ButtonPress-1>", self._party_press)
-        self.cv.tag_bind("pslot", "<B1-Motion>", self._drag_move)
-        self.cv.tag_bind("pslot", "<ButtonRelease-1>", self._drag_release)
+        # 누른 뒤의 끌기 · 놓기는 판 전체로 받는다. 끌기 시작하면 놓을 칸을 칠하느라 판을 다시 그려 누른 파티 칸
+        # 도형이 지워지는데, 도형에 건 바인딩은 그러면 놓은 것을 못 받는다 - 파티에서 시작한 끌기(파티 안 맞바꾸기 ·
+        # 파티 → 박스)가 모든 테마에서 안 됐다 (2026-11-01 게시판 #395). 끌지 않을 때는 _drag 가 없어 그냥 지나간다.
+        self.cv.bind("<B1-Motion>", self._drag_move, add="+")
+        self.cv.bind("<ButtonRelease-1>", self._drag_release, add="+")
 
         self.d_art = ArtSlot(self)
         self.bond = Bond(self)
@@ -377,8 +380,10 @@ class BoxWindow(Scene, BX.BoxWindow):
         if box is not None:
             cv = btn.cv if isinstance(btn, K.CButton) else self.cv
             try:
-                x = cv.winfo_rootx() + int(box[0])
-                y = cv.winfo_rooty() + (int(box[3]) + 2 if below or btn == "page" else int(box[1]) - U.h(20))
+                # 판 좌표 -> 화면 좌표 (판이 굴러가 있으면 굴린 만큼 뺀다 - 지금 박스 판은 안 구르지만 dp/tms.py 와 같게)
+                x = cv.winfo_rootx() + int(box[0] - cv.canvasx(0))
+                y = cv.winfo_rooty() + int((box[3] + 2 if below or btn == "page" else box[1] - U.h(20))
+                                           - cv.canvasy(0))
             except tk.TclError:
                 return None
         else:

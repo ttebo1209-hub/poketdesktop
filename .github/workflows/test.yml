@@ -385,6 +385,7 @@ jobs:
           python client/smoke_season.py
           python client/test_practice_ui.py   # 하루 20판 뒤 연습판: 단추·머리줄·대전 기록·트레이 (옛 서버면 예전 글)
           python client/test_held_rank_ui.py  # 시즌 5 같은 지닌 도구 한 마리: 랭크 팀 '도구 겹침'·규칙 카드 (시즌 4·옛 서버면 표시 없음)
+          python client/test_gw_reward_line.py  # 2.0.2: 길드전 보상 글 (새 서버면 꾸미기 · 뽑기권, 옛 서버면 예전 글)
           python client/smoke_eggs.py
           python client/test_walk_shiny.py
       - name: PC 박스 거르기·지닌 도구 칸 (진짜 Tk)
@@ -552,6 +553,7 @@ jobs:
           python client/smoke_season.py
           python client/test_practice_ui.py   # 하루 20판 뒤 연습판: 단추·머리줄·대전 기록·트레이 (옛 서버면 예전 글)
           python client/test_held_rank_ui.py  # 시즌 5 같은 지닌 도구 한 마리: 랭크 팀 '도구 겹침'·규칙 카드 (시즌 4·옛 서버면 표시 없음)
+          python client/test_gw_reward_line.py  # 2.0.2: 길드전 보상 글 (새 서버면 꾸미기 · 뽑기권, 옛 서버면 예전 글)
           python client/smoke_eggs.py
           python client/test_walk_shiny.py
       - name: PC 박스 거르기·지닌 도구 칸 (진짜 Tk)
@@ -724,6 +726,8 @@ jobs:
           cd server
           python test_pvp.py            # + 연습판 (하루 20판 뒤): 양쪽 점수 그대로 · 이기면 100원 · 하루 상한 같이 · 쿨타임 그대로
           python test_held_v5.py        # 시즌 5 랭크 팀 같은 지닌 도구 한 마리 (시즌 4 는 그대로인지도)
+          python test_held_all.py       # 2.0.2: 같은 지닌 도구 한 마리를 모든 팀 배틀에 (막기 · 판에서만 빼기 · 시즌 4 그대로)
+          python test_gw_rewards.py     # 2.0.2: 길드전 결산 - 순위 · 활약 기술머신 뽑기권 · 꾸미기 바꿔 주기
           python test_walk.py
 
       - name: HTTP 로 두드리는 검사

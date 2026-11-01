@@ -146,6 +146,11 @@ def can_invite(uid, other):
         return "데리고 다니는 포켓몬이 없습니다."
     if not pvp.ranked_team(other):
         return "상대가 데리고 다니는 포켓몬이 없습니다."
+    # 같은 도구는 한 팀에 한 마리 (2.0.2) - 초대하는 사람만 막는다. 상대의 겹침으로 막으면 상대 도구가 새고, 상대는
+    # 그 사실을 모른다 - 받는 쪽은 판에서만 뺀다 (_team)
+    why = pvp.held_why(pvp.ranked_team(uid), "랭크 팀" if pvp.team_ids(uid) else "바탕화면 파티")
+    if why:
+        return why
     return None
 
 
@@ -164,8 +169,9 @@ def invite(uid, other, now=None):
 
 
 def _team(uid):
-    """이 사람이 이 판에서 쓸 팀. 레벨은 맞춘다."""
-    return [LB.leveled(m, config.LIVE_LEVEL) for m in pvp.ranked_team(uid)]
+    """이 사람이 이 판에서 쓸 팀. 레벨은 맞춘다. 같은 도구는 앞의 한 마리만 지닌 셈으로 (2.0.2 - 받는 사람이나
+    초대한 뒤에 도구를 바꾼 사람은 그 자리에서 막을 수 없어서 판에서만 뺀다, pvp.SAME_HELD_MAX)."""
+    return [LB.leveled(m, config.LIVE_LEVEL) for m in pvp.strip_held(pvp.ranked_team(uid))[0]]
 
 
 def accept(uid, mid, now=None):
@@ -237,6 +243,11 @@ def answer(uid, mid, ok, now=None):
     if ok:
         if row["b_id"] != uid:
             raise ValueError("받은 사람만 수락할 수 있습니다.")
+        # 수락하는 사람도 그 자리에서 누른다 - 같은 도구가 겹치면 막고 알린다 (2.0.2, 친선전 받기와 같다). 초대는 그대로
+        # 둔다 (앱이 까닭을 보여 준 뒤 거절로 정리한다). 초대한 뒤 도구를 바꾼 건 사람은 판에서만 뺀다 (_team)
+        why = pvp.held_why(pvp.ranked_team(uid), "랭크 팀" if pvp.team_ids(uid) else "바탕화면 파티")
+        if why:
+            raise ValueError(why)
         return accept(uid, mid, now)
     what = "cancelled" if row["a_id"] == uid else "declined"
     db.run("UPDATE live_match SET state='done', result=?, updated_at=?,"

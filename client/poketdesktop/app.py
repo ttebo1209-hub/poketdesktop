@@ -1368,14 +1368,21 @@ class App(object):
     # 친구끼리 **둘 다 켜 있을 때만** 하는 1:1. 초대를 알아차리는 가장 늦은
     # 때가 다음 동기화(90초)라, 초대는 그보다 넉넉히 살아 있다(서버의
     # LIVE_INVITE_SEC). 친구 탭을 열어 두면 거기서 자주 물어본다.
-    def live_invite(self, uid, name=""):
-        """친구에게 실시간 배틀을 건다."""
+    def live_invite(self, uid, name="", on_err=None):
+        """친구에게 실시간 배틀을 건다. on_err(까닭) - 막혔을 때 그 까닭을 띄울 곳 (친구 탭)."""
         if self.live_battle:
             return self.live_battle.focus()
 
         def done(r, err):
             if err:
-                return self.notify(getattr(err, "message", str(err)))
+                msg = getattr(err, "message", str(err))
+                self.notify(msg)
+                if on_err:
+                    try:
+                        on_err(msg)
+                    except Exception:                       # noqa: BLE001
+                        pass
+                return None
             self.notify("%s 님에게 실시간 배틀을 신청했습니다. 수락하면 바로 시작합니다."
                         % (name or "상대"))
             # 폴링을 기다리지 않고 그 자리에서 친구 탭에 표시한다.
@@ -1465,7 +1472,18 @@ class App(object):
 
         def done(r, err):
             if err:
-                return self.notify(getattr(err, "message", str(err)))
+                msg = getattr(err, "message", str(err))
+                self.notify(msg)
+                if ok:
+                    # 수락이 막혔다 (같은 도구 겹침 - 2.0.2). 까닭을 보여 주고 초대를 거절로 정리한다 - 안 그러면 건
+                    # 사람의 '수락을 기다리는 중...' 이 만료될 때까지 남는다
+                    try:
+                        from .ui_box import confirm
+                        confirm(self.root, "실시간 배틀", "수락할 수 없습니다.\n%s" % msg, danger=False, ok_text="확인")
+                    except Exception:                       # noqa: BLE001
+                        pass
+                    run_async(self.root, lambda: self.api.live_answer(mid, False), lambda _r, _e: None)
+                return None
             if ok and isinstance(r, dict) and r.get("state") == "fighting":
                 self.open_live_battle(r)
         run_async(self.root, lambda: self.api.live_answer(mid, ok), done)

@@ -387,7 +387,8 @@ class FriendsWindow(object):
                 "ghost"),
                ("button", "차단", lambda: self.act(lambda: self.app.api.friend_block(uid)), "ghost"),
                # 접속해 있지 않아도 걸린다 - 그 사람의 지금 파티를 가져와 싸운다.
-               ("button", "배틀", lambda: self.app.pvp_challenge(uid), "red")]
+               # 막히면(같은 도구 겹침 · 30분에 한 번 ...) 까닭을 이 탭에 띄운다 - 예전에는 기록에만 남아 말없이 끝났다
+               ("button", "배틀", lambda: self.app.pvp_challenge(uid, self._fight_done), "red")]
         # 걸어 둔 초대가 이 친구에게 간 것이면, 단추 대신 **기다리는 중**을
         # 띄운다. 알림 한 줄은 금방 사라져서 신청이 갔는지 알 수가 없었다.
         pend = getattr(self.app, "live_pending", None) or {}
@@ -407,8 +408,20 @@ class FriendsWindow(object):
         # 실시간 배틀은 **둘 다 켜 있어야** 한다. 접속 중인 친구에게만 띄운다 -
         # 꺼져 있는 친구 옆에 눌러도 거절당할 단추를 두지 않는다.
         if f.get("online"):
-            out.append(("button", "실시간", lambda: self.app.live_invite(uid, f.get("name")), "accent"))
+            out.append(("button", "실시간", lambda: self.app.live_invite(uid, f.get("name"), on_err=self._fight_err),
+                        "accent"))
         return out
+
+    def _fight_done(self, _r, why):
+        """친구 배틀이 끝났다 (pvp_challenge 의 on_done). 막혔으면 그 까닭을 띄운다."""
+        if why:
+            self._fight_err(why)
+
+    def _fight_err(self, why):
+        try:
+            self.say(why, U.DANGER)
+        except Exception:                                   # noqa: BLE001 (탭이 닫혔다)
+            pass
 
     def _friend_row(self, f):
         row = self._card()

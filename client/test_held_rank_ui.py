@@ -7,7 +7,7 @@
   · 새 서버(시즌 5): 겹친 포켓몬을 '도구 겹침' 으로 표시 · 열 때 알림 · 두 마리째를 고르면 누가 지녔는지 말하고 막는다 ·
     규칙 카드에 한 줄 · 내 카드에 '랜덤 배틀을 걸 수 없음'
   · 시즌 4·옛 서버(칸 없음): 같은 도구 둘이어도 아무 표시도 막기도 없다
-  · 길드전 팀(spec)은 시즌 5 여도 안 건다 (랭크만)
+  · 길드전 팀(spec)에도 건다 (2.0.2 - 모든 팀 배틀): 겹친 것을 표시하고 아래 줄에 '저장할 수 있습니다' 를 띄운다
 기본 화면을 본 뒤 같은 검사를 DP 테마로 한 번 더 돈다 (자식 프로세스).
 """
 import os
@@ -169,14 +169,19 @@ def team_checks(root):
     chk("  같은 도구도 막지 않는다", 4 in tw.picked, tw.picked)
     close(root, tw)
 
-    print("-- 길드전 팀 (spec) 은 시즌 5 여도 안 건다")
+    print("-- 길드전 팀 (spec) 에도 건다 (2.0.2)")
     app.api.v5 = True
     gw = ui_season.TeamWindow(app, spec={"title": "길드전 방어팀", "note": "길드전 설명",
                                          "load": lambda: (app.api.pvp_team(), app.api.pokemon()),
                                          "save": app.api.pvp_set_team, "saved": "짰습니다"})
     pump(root, lambda: gw.mons and gw._wait is None)
     pump(root, lambda: False, 0.2)
-    chk("길드전 팀은 표시·막기 없음", gw.held_max is None and gw.held_dup_ids(gw.picked) == [], gw.held_max)
+    chk("길드전 팀도 겹친 뒤의 것을 표시", gw.held_max == 1 and gw.held_dup_ids(gw.picked) == [3],
+        (gw.held_max, gw.held_dup_ids(gw.picked)))
+    hint, _c = gw.team_hint()
+    chk("  아래 줄: 겹친 도구 · 저장할 수 있게 고치라", "기합의띠(한카리아스·메타그로스)" in hint and "저장할 수" in hint, hint)
+    gw.toggle(4)
+    chk("  같은 도구 두 마리째는 안 들어간다", 4 not in gw.picked, gw.picked)
     close(root, gw)
 
 
@@ -185,7 +190,7 @@ def rank_checks(root):
     rw = ui_rank.RankWindow(app)
     pump(root, lambda: not rw.busy and rw.me)
     text = (rw._rules_data() or {}).get("text") or ""
-    chk("규칙 카드에 한 줄", "같은 지닌 도구는 랭크 팀에 1마리까지" in text, text)
+    chk("규칙 카드에 한 줄 (2.0.2 - 모든 팀 배틀)", "같은 지닌 도구는 한 팀에 1마리까지" in text and "길드전" in text, text)
     short = (rw._me_data() or {}).get("short") or ""
     chk("내 카드: 랜덤 배틀을 걸 수 없음", "랜덤 배틀을 걸 수 없습니다" in short, short)
     app.api.v5 = False

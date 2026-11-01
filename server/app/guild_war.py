@@ -115,6 +115,15 @@ CONTRIB_WIN = 20             # 공격에서 이길 때마다 (길드 코인, 1�
 CONTRIB_JOKER = 20           # 조커를 이기면 더
 CONTRIB_DEFEND = 20          # 내가 지키는 칸이 공격을 막아 낼 때마다
 CONTRIB_MAX = 300            # 한 사람이 한 시즌에 받는 기여 보상 상한
+# 결산 보상 개편 (2.0.2, 11/01 사용자: "꾸미기 아이템이랑 일반 기술머신 선택권을 잘 조합해서"). 순위마다 꾸미기 묶음
+# (DECO_RANK) 에 **랜덤 기술머신 뽑기권**(일반 - 타입 확정은 랭크 챔피언 것으로 남긴다)을 더 준다. 뽑기권은 공격에서
+# 한 번이라도 이긴 사람만 받는다 - 판 하나 열고 바로 기권해 받아 가지 못하게 (코인 · 꾸미기는 예전처럼 공격한 사람 모두).
+# 순위와 상관없이 공격에서 TM_ACTIVE_WINS 번 이상 이긴 사람은 활약 보상으로 TM_ACTIVE 장 더. 뽑기권은 팔 수도 넘길 수도
+# 없어 돈벌이가 안 된다 (sell 0 · custom).
+TM_TICKET = "RANKTICKETTM"
+TM_RANK = {1: 2, 2: 1, 3: 1}
+TM_ACTIVE_WINS = 3
+TM_ACTIVE = 1
 TITLE = "s5_guildwar"
 GIFT_TITLE = "시즌 %d 길드전"
 KINDS = ("def", "atk")
@@ -424,6 +433,10 @@ def set_team(uid, kind, ids, now=None):
                             % pvp.RESTRICTED_MAX)
     if pvp.too_many_same([x["species"] for x in mons]):
         raise HTTPException(409, "같은 포켓몬은 한 팀에 %d마리만 넣을 수 있습니다." % pvp.SAME_SPECIES_MAX)
+    # 같은 도구는 한 팀에 한 마리 (2.0.2, 랭크 팀 등록과 같다). 등록한 뒤에 바꾼 도구는 판 직전에 뺀다 (_ready)
+    why = pvp.held_why(mons, "길드전 %s" % ("방어팀" if kind == "def" else "공격팀"))
+    if why:
+        raise HTTPException(409, why)
     col = "def_ids" if kind == "def" else "atk_ids"
     # 고정된 줄의 길드는 안 바꾼다 - 전략 기간에 다른 길드로 옮긴 사람이 그 길드 사람이 되면 안 된다
     db.run("INSERT INTO guild_war_team (season, user_id, guild_id, name, %s, updated_at)"
@@ -465,13 +478,18 @@ def _snapshot(uid, ids):
     return pvp.capped(pvp.restrict(mons[:config.MAX_PARTY])[0])
 
 
-def _ready(team):
+def _ready(team, lost=None):
     """고정해 둔 팀을 판에 올리기 직전에 다시 다듬는다 (10/22).
 
     팀은 전략 기간에 고정되는데 규칙은 그 뒤에 생길 수 있다 - 같은 종은 한 마리만 나가고(pvp.restrict),
-    유대 미션을 마친 개체만 메가진화한다(mega.mark_bonded - 지금의 유대로). AI 수비대 팀은 id 가 없어 유대는 그대로다.
+    같은 도구는 앞의 한 마리만 지닌 셈으로(pvp.strip_held, 2.0.2 - 전쟁 중에는 팀을 못 바꾸니 막지 않고 판에서만
+    뺀다. 공격팀 · 사람 방어팀 · AI 수비대 모두), 유대 미션을 마친 개체만 메가진화한다(mega.mark_bonded - 지금의
+    유대로). AI 수비대 팀은 id 가 없어 유대는 그대로다. lost 에 목록을 주면 도구가 빠진 것을 붙인다 (판 처음 알림).
     """
-    return mega.mark_bonded(pvp.restrict(team)[0])
+    out, gone = pvp.strip_held(pvp.restrict(team)[0])
+    if lost is not None:
+        lost.extend(gone)
+    return mega.mark_bonded(out)
 
 
 # ---------------------------------------------------------------- 명단 고정·지도 나누기 (전략 기간 시작)
@@ -1041,10 +1059,15 @@ def attack(uid, region, now=None):
     trainer = _trainer(t, s)
     if not trainer["team"]:
         raise HTTPException(409, "그 칸을 지키는 팀이 없습니다.")
-    tb = TB.TrainerBattle(deps.dex(), _ready(json.loads(me["atk_team"])), trainer, random.Random())
+    lost = []
+    tb = TB.TrainerBattle(deps.dex(), _ready(json.loads(me["atk_team"]), lost), trainer, random.Random())
     tb.keystone["me"] = mega.has_keystone(uid)
     tb.zring["me"] = gimmick.has_zring(uid)
     events = tb.start()
+    if lost:
+        # 내 공격팀에서 도구가 빠진 것을 판 처음에 알린다 (관장 판의 '쉬는 포켓몬' 알림과 같은 자리)
+        at = 1 if events and events[0].get("t") == "intro" else 0
+        events.insert(at, {"t": "note", "text": pvp.strip_note(lost)})
     # 공격권을 먼저 쓴다. 조건을 건 UPDATE 라 두 창에서 동시에 눌러도 한도를 못 넘는다.
     cur = db.run("UPDATE guild_war_team SET used=used+1 WHERE season=? AND user_id=? AND used < attacks", (s, uid))
     if getattr(cur, "rowcount", 1) == 0:
@@ -1345,9 +1368,10 @@ def settle(now=None):
                 continue
             guild._coin_add(uid, n)
             _deco_reward(uid, rank, s, r["name"], now)
+            _tm_reward(uid, gid, rank, s, r["name"], now)
             if rank == 1:
                 msg = ("시즌 %d 길드전에서 [%s] 길드가 우승했습니다! 칭호 '%s' 을(를) 드립니다. "
-                       "칭호는 랭킹 탭에서 바꿀 수 있습니다." % (s, r["name"], season.TITLES[TITLE]))
+                       "칭호는 마이페이지에서 바꿀 수 있습니다." % (s, r["name"], season.TITLES[TITLE]))
                 db.run("INSERT INTO gift (user_id, kind, item_id, count, title, message, created_at)"
                        " VALUES (?,?,?,?,?,?,?)", (uid, "title", TITLE, 1, GIFT_TITLE % s, msg, _iso(now)))
         msg_of[gid] = ("길드전이 끝났습니다. [%s] %d위 (%d칸). 한 번이라도 공격한 길드원에게 길드 코인 %d개%s"
@@ -1357,6 +1381,7 @@ def settle(now=None):
         if v5():
             msg_of[gid] += " 꾸미기 보상(%s)은 선물함으로 갑니다." % (
                 DECO_RANK_KR[rank] if rank in DECO_RANK else "참가 묶음 선택권")
+            msg_of[gid] += tm_text(rank)
     for gid, text in msg_of.items():
         if db.q1("SELECT 1 FROM guild WHERE id=?", (gid,)) and _mark("gw:%d:said:%d" % (s, gid), _iso(now)):
             guild._say(gid, text, now)
@@ -1371,11 +1396,24 @@ DECO_RANK_KR = {1: "금관 · 금빛 별가루 · 발밑 빛", 2: "은관 · 은
 
 
 def _deco_reward(uid, rank, s, gname, now=None):
-    """결산 때 한 번이라도 공격한 길드원에게 꾸미기 보상을 선물함으로 (시즌 5 부터). 받는 것은 꾸미기 창에서 낀다."""
+    """결산 때 한 번이라도 공격한 길드원에게 꾸미기 보상을 선물함으로 (시즌 5 부터). 받는 것은 꾸미기 창에서 낀다.
+
+    순위 묶음을 이미 다 가졌으면(같은 순위를 또 했다) 참가 묶음 선택권을 준다 (2.0.2) - 장식은 하나만 가져서
+    (deco.grant) 그대로 주면 아무것도 새로 안 생긴다."""
     if not v5():
         return
     from common import deco as C
+    from . import deco as D
     what = DECO_RANK.get(rank, C.PICK)
+    if rank in DECO_RANK:
+        have = D.owned(uid)
+        if all(have.get(k) for k in C.BUNDLES.get(what[len("bundle:"):], ())):
+            msg = ("시즌 %d 길드전 %d위 [%s] - 꾸미기 보상. %s 은(는) 이미 다 가지고 있어서 대신 참가 묶음 선택권을 드립니다 - "
+                   "가방의 '꾸미기' 주머니에서 리본+발자국 · 꽃핀+꽃잎 · 진주+하트 가운데 하나를 고르세요."
+                   % (s, rank, gname, DECO_RANK_KR[rank]))
+            db.run("INSERT INTO gift (user_id, kind, item_id, count, title, message, created_at)"
+                   " VALUES (?,?,?,?,?,?,?)", (uid, "deco", C.PICK, 1, "시즌 %d 길드전 꾸미기" % s, msg, _iso(now)))
+            return
     if rank in DECO_RANK:
         msg = ("시즌 %d 길드전 %d위 [%s] - 꾸미기 보상 (%s). 가방의 '꾸미기' 주머니에 들어갑니다 - 거기서나 "
                "바탕화면 포켓몬 우클릭 '꾸미기...' 에서 씌울 수 있습니다." % (s, rank, gname, DECO_RANK_KR[rank]))
@@ -1384,6 +1422,48 @@ def _deco_reward(uid, rank, s, gname, now=None):
                "하나를 고르세요 - 가방의 '꾸미기' 주머니에 든 '참가 묶음 선택권' 으로 고릅니다." % s)
     db.run("INSERT INTO gift (user_id, kind, item_id, count, title, message, created_at) VALUES (?,?,?,?,?,?,?)",
            (uid, "deco", what, 1, "시즌 %d 길드전 꾸미기" % s, msg, _iso(now)))
+
+
+def tm_count(uid, gid, rank, s):
+    """결산 때 받을 랜덤 기술머신 뽑기권 (순위 몫, 활약 몫). 그 길드로 공격해 이긴 판이 없으면 (0, 0)."""
+    r = db.q1("SELECT COUNT(*) n FROM guild_war_attack WHERE season=? AND atk_user=? AND atk_guild=? AND result='win'",
+              (s, uid, gid))
+    wins = int(r["n"] or 0) if r else 0
+    if not wins:
+        return 0, 0
+    return TM_RANK.get(rank, 0), (TM_ACTIVE if wins >= TM_ACTIVE_WINS else 0)
+
+
+def _tm_reward(uid, gid, rank, s, gname, now=None):
+    """결산 때 랜덤 기술머신 뽑기권을 선물함으로 (시즌 5 부터, 2.0.2). 준 장수.
+
+    선물 제목은 칭호 선물(GIFT_TITLE)과 다르게 둔다 - 그 제목은 '1위 길드에서 공격한 사람' 을 뜻한다."""
+    if not v5():
+        return 0
+    by_rank, active = tm_count(uid, gid, rank, s)
+    n = by_rank + active
+    if not n:
+        return 0
+    bits = []
+    if by_rank:
+        bits.append("%d위 보상 %d장" % (rank, by_rank))
+    if active:
+        bits.append("활약 보상(공격 %d승 이상) %d장" % (TM_ACTIVE_WINS, active))
+    msg = ("시즌 %d 길드전 [%s] - 랜덤 기술머신 뽑기권 %d장 (%s). 가방에서 쓰면 아직 없는 기술머신 하나가 나옵니다."
+           % (s, gname, n, " · ".join(bits)))
+    db.run("INSERT INTO gift (user_id, kind, item_id, count, title, message, created_at) VALUES (?,?,?,?,?,?,?)",
+           (uid, "item", TM_TICKET, n, "시즌 %d 길드전 기술머신" % s, msg, _iso(now)))
+    return n
+
+
+def tm_text(rank):
+    """결산 채팅에 붙일 뽑기권 한 마디 (시즌 5)."""
+    if TM_RANK.get(rank):
+        return (" 공격에서 이긴 길드원에게는 랜덤 기술머신 뽑기권 %d장도 드립니다. %d번 이상 이긴 길드원은 활약 보상으로 "
+                "%d장 더 받습니다." % (TM_RANK[rank], TM_ACTIVE_WINS, TM_ACTIVE))
+    # 순위 몫이 없는 길드 - '더' 가 아니다
+    return (" 공격에서 %d번 이상 이긴 길드원은 활약 보상으로 랜덤 기술머신 뽑기권 %d장을 받습니다."
+            % (TM_ACTIVE_WINS, TM_ACTIVE))
 
 
 # ---------------------------------------------------------------- 보여주기
@@ -1522,8 +1602,13 @@ def state(uid, now=None):
            "applyDays": APPLY_DAYS, "planDays": PLAN_DAYS, "warDays": WAR_DAYS, "minMembers": MIN_MEMBERS,
            "total": TOTAL_ATTACKS, "tilesPer": TILES_PER_GUILD, "need": WINS_TO_TAKE,
            "shown": SHOWN,
-           "rewards": [{"rank": k, "coins": v} for k, v in sorted(REWARD_COINS.items())]
-                      + [{"rank": None, "coins": REWARD_OTHER}],
+           # 순위 보상. deco · tm 은 시즌 5 부터 (2.0.2 - 옛 앱은 rank · coins 만 읽는다)
+           "rewards": [dict({"rank": k, "coins": v},
+                            **({"deco": DECO_RANK_KR[k], "tm": TM_RANK.get(k, 0)} if v5() else {}))
+                       for k, v in sorted(REWARD_COINS.items())]
+                      + [dict({"rank": None, "coins": REWARD_OTHER},
+                              **({"deco": "참가 묶음 선택권", "tm": 0} if v5() else {}))],
+           "tmActive": {"wins": TM_ACTIVE_WINS, "count": TM_ACTIVE} if v5() else None,
            "title": season.TITLES[TITLE], "levelCap": season.LEVEL_CAP,
            "guild": None, "entered": False, "can": {"apply": False, "team": False, "attack": False},
            "entries": [{"guildId": e["guild_id"], "name": e["name"],

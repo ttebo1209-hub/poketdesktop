@@ -153,10 +153,11 @@ class GBABag(object):
                        fill="#e4e4da", tags=T)
         n = len(POCKETS)
         inner = py2 - py1 - 2 * ins - s(20) - lh
-        rh = max(s(22), min(s(34), inner // n))
+        f11 = font(11)
+        # 줄은 글씨 높이 + 조금까지 줄어든다 (s(22) 아래로 안 줄이면 가장 작은 창에서 맨 끝 '기술머신' 줄이 빠졌다)
+        rh = max(K.tkfont_of(cv, f11).metrics("linespace") + s(4), min(s(34), inner // n))
         y = py1 + ins + s(4)
         now = self._pocket_now()
-        f11 = font(11)
         for key, _l in POCKETS:
             if y + rh > py2 - ins - s(12) - lh:
                 break
