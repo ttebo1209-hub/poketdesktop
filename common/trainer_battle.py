@@ -866,6 +866,8 @@ class TrainerBattle(object):
                 sc -= stall_pen
             if opt[0] == "switch" and self.war_sent == self.turn - 1:
                 sc -= self.WAR2_REENTRY_PEN                # 막 낸 포켓몬을 바로 바꾸면 그 턴을 공짜로 준다
+            if opt[0] == "switch":
+                sc -= self._switch_cost(opt[1])
             if best_sc is None or sc > best_sc:
                 best, best_sc = opt, sc
         took = time.time() - t0
@@ -874,6 +876,10 @@ class TrainerBattle(object):
         if cut or took > self.WAR2_SLOW:
             self._war_log("셈 %dms (선택지 %d/%d%s)" % (took * 1000, seen, len(opts), ", 비상 상한" if cut else ""))
         return best or plain
+
+    def _switch_cost(self, slot):
+        """교체 수에 붙이는 값 - 길드전은 0 (시즌 5 랭크의 거울 판 _RankedWar 만 덮어쓴다)."""
+        return 0.0
 
     def _war_log(self, text):
         """서버 로그(docker logs)에 한 줄 - 전쟁 중 새 셈을 되돌릴지 정할 근거 (2026-10-22 사용자 결정)."""

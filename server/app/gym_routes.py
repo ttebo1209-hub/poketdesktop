@@ -165,10 +165,6 @@ def start(region: str, ctx=Depends(deps.current)):
     party, benched = pvp.split_restricted(_party(uid))
     if not party:
         raise HTTPException(409, "데리고 다니는 포켓몬이 없습니다.")
-    # 같은 도구는 한 팀에 한 마리 (2.0.2) - 도전하는 사람은 그 자리에서 고칠 수 있으니 막고 알린다. 관장 팀은 자료 그대로
-    why = pvp.held_why(party)
-    if why:
-        raise HTTPException(409, why)
     tb = TB.TrainerBattle(deps.dex(), party, t, random.Random())
     tb.keystone["me"] = mega.has_keystone(uid)          # 관장 8곳 (시즌 3)
     tb.zring["me"] = gimmick.has_zring(uid)          # Z기술 (시즌 4)

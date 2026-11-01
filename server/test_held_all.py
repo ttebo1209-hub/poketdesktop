@@ -1,17 +1,18 @@
 # -*- coding: utf-8 -*-
-"""같은 지닌 도구는 한 팀에 한 마리 - 모든 팀 배틀 (2.0.2, 시즌 5 season.rules_v5).
+"""같은 지닌 도구는 한 팀에 한 마리 - 랭크 팀으로 싸우는 배틀 (2.0.2 → 2.0.2 추가, 시즌 5 season.rules_v5).
 
     .venv-server/bin/python server/test_held_all.py
 
 서버를 띄우지 않는다. 언제나 새 임시 DB 로 시작하고(POKET_DB 를 덮어쓴다), 끝나면 만든 사용자 · 길드와 그 폴더를
 지운다. pvp.SAME_HELD_MAX 의 설명에 적힌 규칙을 배틀마다 못 박는다:
 
-  · **그 자리에서 누르는 사람**은 막고 무엇을 고칠지 알린다 (pvp.held_why) - 관장 · 악당 도전(409, 도구 이름 ·
-    '바탕화면 파티'), 실시간을 초대하는 사람, 친선전 상대를 구하거나 받는 사람, 레이드에 들어가는 사람,
-    길드전 팀 등록(409), 친구 배틀을 거는 사람
+  · **바탕화면 파티로 싸우는 배틀은 겹쳐도 된다** (2.0.2 추가 - 사용자: "일반 파티(바탕화면창)이랑 관장에서는 도구 중첩
+    가능하도록") - 관장 · 악당 도전, 레이드에 들어가기 · 시작, 친구 배틀 걸기 · 그 판. 막지도 빼지도 않는다
+  · **그 자리에서 누르는 사람**은 막고 무엇을 고칠지 알린다 (pvp.held_why) - 실시간을 초대하는 사람, 친선전 상대를
+    구하거나 받는 사람, 길드전 팀 등록(409)
   · **자리에 없거나 고칠 수 없는 쪽**은 막지 않고 그 판에서만 뒤의 것 도구를 뺀다 (pvp.strip_held) - 실시간을 받는
-    사람 · 초대한 뒤에 바꾼 사람, 친선전을 구해 둔 사람, 레이드를 시작할 때의 방 사람(방에서 안 지워진다),
-    길드전의 굳힌 공격팀 · 사람 방어팀 · AI 수비대. DB 의 원본(포켓몬 · 굳힌 팀 JSON)은 그대로다
+    사람 · 초대한 뒤에 바꾼 사람, 친선전을 구해 둔 사람, 길드전의 굳힌 공격팀 · 사람 방어팀 · AI 수비대.
+    DB 의 원본(포켓몬 · 굳힌 팀 JSON)은 그대로다
   · 길드전 공격팀에서 도구가 빠지면 판 처음(인사 바로 뒤)에 알린다 - 공격팀에서 빠졌을 때만
   · 관장 · 악당 같은 NPC 팀은 자료 그대로 (사람 팀에 거는 규칙이다)
   · 메가스톤 · Z크리스탈도 도구다. 안 겹치면 아무것도 안 바뀐다
@@ -188,67 +189,46 @@ CLOCK = Clock()
 
 # ---------------------------------------------------------------- 시즌 5
 def gym5():
-    print("=== 관장 (시즌 5) ===")
+    print("=== 관장 (시즌 5) - 겹쳐도 된다 (2.0.2 추가) ===")
     region = misty_region()
     u = mkuser("gym5")
-    hold(u, SASH, None, SASH)
-    code, why = http(lambda: gym_routes.start(region, ctx=me(u)))
-    chk("같은 도구 둘이면 관장 도전이 막힌다 (409)", code == 409, (code, why))
-    chk("  도구 이름과 '바탕화면 파티' 로 알린다", N(SASH) in why and "바탕화면 파티" in why, why)
-    chk("  판은 안 생긴다", not gym_routes._active(u))
-    hold(u, STONE, STONE)
-    code, why = http(lambda: gym_routes.start(region, ctx=me(u)))
-    chk("같은 메가스톤 둘도 막힌다", code == 409 and N(STONE) in why, (code, why))
-    hold(u, ZC, None, None, ZC)
-    code, why = http(lambda: gym_routes.start(region, ctx=me(u)))
-    chk("같은 Z크리스탈 둘도 막힌다", code == 409 and N(ZC) in why, (code, why))
-
-    hold(u, SASH, ORB, STONE, ZC)
-    code, out = http(lambda: gym_routes.start(region, ctx=me(u)))
-    chk("서로 다른 도구면 도전된다", code is None and out.get("id"), (code, out if code else ""))
-    if code is None:
-        d = gym_data(out["id"])
-        chk("  안 겹치면 아무것도 안 바뀐다 (판의 내 팀 = 지닌 그대로)",
-            held_fighters(d["me"]) == want(SASH, ORB, STONE, ZC), held_fighters(d["me"]))
-        foe = held_fighters(d["foe"])
-        chk("  관장(NPC) 팀은 자료 그대로 - 마코열매 둘이 남는다",
-            foe.count("COLBURBERRY") == 2 and foe == [e.get("held") for e in gym.trainer_at(region)["team"][:6]], foe)
-        chk("  인사 뒤에 도구 알림은 없다", not any(e.get("t") == "note" for e in out["events"]),
-            [e.get("t") for e in out["events"]][:3])
-        forfeit(out["id"], u)
-
-    # 거는 사람은 '실제로 나가는 팀' 으로 센다 - 같은 종이라 쉬는 포켓몬의 도구는 겹쳐도 상관없다
-    v = mkuser("gym5bench")
-    first = mons_of(v)[0]
-    db.run("UPDATE pokemon SET species=? WHERE id=?", (first["species"], mons_of(v)[2]["id"]))
-    hold(v, SASH, None, SASH)
-    code, out = http(lambda: gym_routes.start(region, ctx=me(v)))
-    chk("쉬는 포켓몬(같은 종)과 겹친 도구는 안 막힌다 - 나가는 팀으로 센다", code is None, (code, out))
-    if code is None:
-        chk("  나가는 팀은 다섯, 기합의띠는 하나", held_fighters(gym_data(out["id"])["me"]) == want(SASH)[:5],
-            held_fighters(gym_data(out["id"])["me"]))
-        forfeit(out["id"], v)
+    for helds, what in (((SASH, None, SASH), "같은 도구 둘"), ((STONE, STONE), "같은 메가스톤 둘"),
+                        ((ZC, None, None, ZC), "같은 Z크리스탈 둘")):
+        hold(u, *helds)
+        code, out = http(lambda: gym_routes.start(region, ctx=me(u)))
+        chk("%s이어도 관장에 도전된다" % what, code is None and out.get("id"), (code, out if code else ""))
+        if code is None:
+            d = gym_data(out["id"])
+            chk("  판의 내 팀 = 지닌 그대로 (빼지 않는다)", held_fighters(d["me"]) == want(*helds), held_fighters(d["me"]))
+            chk("  인사 뒤에 도구 알림은 없다", not any(e.get("t") == "note" for e in out["events"]),
+                [e.get("t") for e in out["events"]][:3])
+            if what == "같은 도구 둘":
+                foe = held_fighters(d["foe"])
+                chk("  관장(NPC) 팀은 자료 그대로 - 마코열매 둘이 남는다",
+                    foe.count("COLBURBERRY") == 2 and foe == [e.get("held") for e in gym.trainer_at(region)["team"][:6]],
+                    foe)
+            forfeit(out["id"], u)
 
 
 def boss5():
-    print("\n=== 악당 (시즌 5) ===")
+    print("\n=== 악당 (시즌 5) - 겹쳐도 된다 (2.0.2 추가) ===")
     u = mkuser("boss5")
     hold(u, None, ORB, None, ORB)
     code, why = http(lambda: boss_routes.start(ctx=me(u)))
-    chk("악당이 없을 때는 그 까닭이 먼저다 (도구 겹침보다)", code == 404 and N(ORB) not in why, (code, why))
-    # 시즌 5 에는 악당이 아예 안 나온다 (10/31 결정) - 나와 있는 셈으로 next_fight 만 바꿔 끼워 도구 검사 길을 본다
+    chk("악당이 없으면 그 까닭만 (도구 이야기 없음)", code == 404 and N(ORB) not in why, (code, why))
+    # 시즌 5 에는 악당이 아예 안 나온다 (10/31 결정) - 나와 있는 셈으로 next_fight 만 바꿔 끼워 도전 길을 본다
+    t = gym.trainer_at(misty_region())
     real_nf = boss.next_fight
-    boss.next_fight = lambda uid, party, now=None: ("boss:test", "t", {"team": [{"species": "PIKACHU"}]})
+    boss.next_fight = lambda uid, party, now=None: (boss.region_of("2026-10-20", 0), t["id"], t)
     try:
-        code, why = http(lambda: boss_routes.start(ctx=me(u)))
+        code, out = http(lambda: boss_routes.start(ctx=me(u)))
     finally:
         boss.next_fight = real_nf
-    chk("같은 도구 둘이면 악당 도전이 막힌다 (409)", code == 409 and N(ORB) in why and "바탕화면 파티" in why, (code, why))
-    chk("  판은 안 생긴다", not gym_routes._active(u))
-    hold(u, None, ORB)
-    code, why = http(lambda: boss_routes.start(ctx=me(u)))
-    # 시즌 5 에는 악당이 안 나온다 (10/31 결정) - 도구로 막히지 않고 그다음 까닭(아직 안 나타남)까지 간다
-    chk("안 겹치면 도구로 막히지 않는다 (시즌 5 는 악당이 안 나와 404)", code == 404 and N(ORB) not in why, (code, why))
+    chk("같은 도구 둘이어도 악당에 도전된다", code is None and out.get("id"), (code, out if code else ""))
+    if code is None:
+        chk("  판의 내 팀 = 지닌 그대로", held_fighters(gym_data(out["id"])["me"]) == want(None, ORB, None, ORB),
+            held_fighters(gym_data(out["id"])["me"]))
+        forfeit(out["id"], u)
 
 
 def live5():
@@ -340,23 +320,20 @@ def friendly5():
 
 
 def raid5():
-    print("\n=== 레이드 (시즌 5) ===")
+    print("\n=== 레이드 (시즌 5) - 겹쳐도 된다 (2.0.2 추가) ===")
     u = mkuser("raid5")
     real = raid.in_period, raid.played_today
     raid.in_period = lambda now=None: True
     raid.played_today = lambda uid, now=None: False
     try:
         hold(u, LEFT, LEFT)
-        why = val_err(raid._can_play, u)
-        chk("겹치면 레이드에 못 들어간다", N(LEFT) in why and "바탕화면 파티" in why, why)
+        chk("겹쳐도 레이드에 들어간다", val_err(raid._can_play, u) == "", val_err(raid._can_play, u))
         hold(u, ZC, ORB, ZC)
-        chk("같은 Z크리스탈 둘도 막힌다", N(ZC) in val_err(raid._can_play, u), val_err(raid._can_play, u))
-        hold(u, ZC, ORB, LEFT)
-        chk("안 겹치면 들어간다", val_err(raid._can_play, u) == "", val_err(raid._can_play, u))
+        chk("같은 Z크리스탈 둘이어도 들어간다", val_err(raid._can_play, u) == "", val_err(raid._can_play, u))
     finally:
         raid.in_period, raid.played_today = real
 
-    print("  -- 들어간 뒤에 바꿨다: 시작할 때 판에서만 뺀다")
+    print("  -- 시작할 때도 빼지 않는다")
     t0 = raid_at(10, 57)
     ps = [mkuser("raid5p%d" % i) for i in range(3)]
     hold(ps[0], SASH)
@@ -365,13 +342,13 @@ def raid5():
     hold(ps[1], ORB, SCARF, ORB)             # 로비에서 바꿨다
     before = held_db(ps[1])
     out = raid.begin(raid.room(row["id"]), t0 + datetime.timedelta(minutes=4))
-    chk("시작은 막지 않는다", out["state"] == "fighting", out["state"])
+    chk("시작된다", out["state"] == "fighting", out["state"])
     here = [m["user_id"] for m in raid.members(row["id"]) if not m["left_at"]]
-    chk("  겹친 사람도 방에서 안 지워진다", sorted(here) == sorted(ps), here)
+    chk("  겹친 사람도 방에 그대로", sorted(here) == sorted(ps), here)
     teams = dict((p["uid"], p["team"]) for p in json.loads(out["data"])["players"])
-    chk("  겹친 사람은 그 판에서만 앞의 하나만 지닌다", held_fighters(teams.get(ps[1], [])) == want(ORB, SCARF),
+    chk("  겹친 사람은 지닌 그대로 싸운다", held_fighters(teams.get(ps[1], [])) == want(ORB, SCARF, ORB),
         held_fighters(teams.get(ps[1], [])))
-    chk("  안 겹친 사람은 그대로", held_fighters(teams.get(ps[0], [])) == want(SASH), held_fighters(teams.get(ps[0], [])))
+    chk("  안 겹친 사람도 그대로", held_fighters(teams.get(ps[0], [])) == want(SASH), held_fighters(teams.get(ps[0], [])))
     chk("  DB 의 원본 도구는 그대로", held_db(ps[1]) == before, held_db(ps[1]))
 
 
@@ -381,14 +358,27 @@ def raid_at(hour, minute):
 
 
 def friend5():
-    print("\n=== 친구 배틀 거는 쪽 (시즌 5) ===")
-    u = mkuser("fb5")
+    print("\n=== 친구 배틀 (시즌 5) - 겹쳐도 된다 (2.0.2 추가) ===")
+    u, v = mkuser("fb5"), mkuser("fb5b")
     hold(u, SCARF, SCARF)
-    why = pvp.can_start(u, "friend")
-    chk("거는 쪽이 겹치면 못 건다", why and N(SCARF) in why and "바탕화면 파티" in why, why)
-    hold(u, SCARF, ORB)
-    chk("안 겹치면 건다", pvp.can_start(u, "friend") is None, pvp.can_start(u, "friend"))
+    hold(v, ORB, None, ORB)
+    chk("거는 쪽이 겹쳐도 건다", pvp.can_start(u, "friend") is None, pvp.can_start(u, "friend"))
+    seen = {}
+    real = pvp.PB.simulate
 
+    def spy(dex, a, b, **kw):
+        seen["a"], seen["b"] = [m.get("held") for m in a], [m.get("held") for m in b]
+        return real(dex, a, b, **kw)
+    pvp.PB.simulate = spy
+    try:
+        pvp.run_match(u, v, kind="friend", seed=7)
+    finally:
+        pvp.PB.simulate = real
+    chk("  판에서도 양쪽 다 지닌 그대로 (빼지 않는다)", seen.get("a") == want(SCARF, SCARF)[:len(seen.get("a") or [])]
+        and seen.get("b") == want(ORB, None, ORB)[:len(seen.get("b") or [])], seen)
+    print("  -- 랜덤(랭크) 배틀은 그대로 건다")
+    why = pvp.can_start(u, "random")
+    chk("  랜덤 배틀은 겹치면 못 건다 (랭크 팀 대신 바탕화면 파티라도)", why and N(SCARF) in why, why)
 
 # ---------------------------------------------------------------- 길드전
 def clock(t):

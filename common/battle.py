@@ -1566,6 +1566,7 @@ class Battle(object):
         prev = user.cond.get("lastMove")
         if top:
             user.cond.pop("glaive", None)         # 대검돌격의 빈틈은 다음 자기 차례까지
+            self._rage_ticked = None
         self._prev_move = prev
         try:
             out = self._do_use(who, user, target, key, ev, called, instructed, bounced)
@@ -1574,6 +1575,20 @@ class Battle(object):
             user.cond.pop("pierce", None)         # 관통드릴·Z기술로 방어를 뚫은 한 번만
         if top:
             self.acted.add(who)
+            rg = user.cond.get("rage")
+            if rg and self._rage_ticked is not user:
+                # 날뛰는 중인데 이번 수가 맞히는 데까지 못 갔다 (무효 · 빗나감 · 막힘 · 마비 · 풀죽음 · 잠듦 ...). 예전에는
+                # _rage_tick 이 맞힌 길에서만 돌아 날뛰기가 끝나지 않았다 - 페어리 앞에서 역린을 몇 턴이고 헛쳤다 (게시판
+                # eunkerrrr). 본가(5세대~, Showdown lockedmove)대로: 그 자리에서 끝나고, 마지막 턴에 끊겼으면 지쳐서 혼란,
+                # 중간 턴이거나 잠들었으면 혼란 없음. 소란피기는 끊겨도 정해진 턴 동안 이어진다 (끊긴 턴도 한 턴으로 센다).
+                if rg.get("move") == "UPROAR":
+                    rg["turns"] -= 1
+                    if rg["turns"] <= 0:
+                        user.cond.pop("rage", None)
+                else:
+                    user.cond.pop("rage", None)
+                    if rg.get("turns", 0) <= 1 and user.status != "sleep":
+                        self._rage_tire(who, user, ev)
             used = getattr(self, "_now_key", None) if n0 < len(ev) else None
             mk = MC.key(self.move_of(used)) if used and used != STRUGGLE else None
             if not any(e.get("t") == "move" and e.get("who") == who for e in ev[n0:]):
@@ -2070,6 +2085,8 @@ class Battle(object):
             if not cloak:
                 H.flinch(self, user, target, move)      # 왕의징표석·예리한이빨 (은밀망토면 안 걸린다)
             H.note_move(user, key)                      # 구애 잠금·메트로놈
+            if user is not self.fighter(who):
+                user.locked = None                      # 유턴 · 볼트체인지로 이미 물러났다 - 물러나면 구애 잠금은 풀린다
 
         if not called:
             self._rage_tick(who, user, k, ev)
@@ -2124,6 +2141,7 @@ class Battle(object):
 
     def _rage_tick(self, who, user, k, ev):
         """역린류: 2~3턴 이어지고 끝나면 혼란에 빠진다 (소란피기는 혼란 없음)."""
+        self._rage_ticked = user
         if k not in SM.LOCK_MOVES:
             if user.cond.get("rage"):
                 user.cond.pop("rage", None)       # 다른 기술을 썼으면 풀린다
@@ -2137,7 +2155,13 @@ class Battle(object):
         if rg["turns"] > 0:
             return
         user.cond.pop("rage", None)
-        if k == "UPROAR" or not user.alive():
+        if k == "UPROAR":
+            return
+        self._rage_tire(who, user, ev)
+
+    def _rage_tire(self, who, user, ev):
+        """날뛰기가 끝나 지쳐서 혼란에 빠진다 (마이페이스 · 이미 혼란이면 그대로)."""
+        if not user.alive():
             return
         if not user.cond.get("confused") and not A.has(user, "OWNTEMPO"):
             user.cond["confused"] = self.rng.randint(2, 5)

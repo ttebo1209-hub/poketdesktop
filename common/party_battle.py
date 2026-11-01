@@ -157,6 +157,12 @@ class _RankedWar(TB.TrainerBattle):
         TB.TrainerBattle._make_duel(self, field)
         self.bt.__class__ = _SteadyDuel
 
+    rank_cost = None                     # {자리: 교체에 붙는 감점} - PartyBattle._rank_cost 가 채운다
+
+    def _switch_cost(self, slot):
+        """랭크에서만 교체 수에 붙는 감점 (길드전 TrainerBattle 은 0). 거울 판 셈(_war_search)이 본다."""
+        return (self.rank_cost or {}).get(slot, 0.0)
+
     def _war_log(self, text):
         """랭크는 판마다 수십 번 고른다 - 서버 로그에 한 줄씩 남기지 않고 센다 (PartyBattle.war_stats, 벤치가 본다)."""
         key = "cut" if "비상 상한" in text else "error"
@@ -186,6 +192,16 @@ class PartyBattle(object):
         out["events"]   재생할 이벤트 목록
         out["turns"]    총 턴 수
     """
+    # ---- 시즌 5 랭크 (war_ai=True) 의 교체 버릇 (2.0.x, 게시판 hannl317 · eunkerrrr '교체가 너무 잦다 · 물고 물린다') ----
+    # 양쪽이 같은 길드전 AI 라 상성을 노린 맞교체가 끝없이 물렸다 (챔피언급 480판: 판마다 4.9번, 같은 둘을 두 번 넘게
+    # 맞바꾼 판 33%). 교체를 막지는 않고 셈에 감점만 얹는다 - 길드전(사람 상대)의 셈은 그대로다.
+    # 값은 같은 480판으로 쟀다: 교체 4.88 -> 3.50 · 되풀이 판 32.5% -> 10.6% · 턴 19.3 -> 18.4, 지금 AI 와 맞붙여 49.6%(약해지지 않음).
+    # 판마다 교체 상한 · 모든 교체에 감점은 벽끼리 마주쳐 라운드 턴 상한(30턴)까지 가는 판이 생겨(최대 115턴) 뺐다.
+    RANK_FRESH_LOCK = True      # 한쪽만 쓰러져 낸 선수는 그 첫 턴에 안 바꾼다 - 고를 때 이미 상대를 보았다 ('처음부터 3번을 내면 된다')
+    RANK_RECALL_TURNS = 5       # 스스로(기술로) 물러난 지 이 턴 안의 선수를 다시 부르면
+    RANK_RECALL_PEN = 0.5       #   이만큼 깎는다 (A -> B -> A 되돌아가기)
+    RANK_SETTLE_TURNS = 2       # 나온 지 이 턴이 안 된 선수를 바꾸면
+    RANK_SETTLE_PEN = 0.3       #   이만큼 깎는다 (막 바꿔 들어온 선수를 또 바꾸기)
 
     def __init__(self, dex, a_mons, b_mons, seed=None, keystone=None, zring=None, war_ai=False):
         if not a_mons or not b_mons:
@@ -227,6 +243,8 @@ class PartyBattle(object):
             self.war_sent = {"me": -1, "foe": -1}    # 쓰러진 선수 대신 다음 선수를 낸 턴
             self.switched_last = {"me": False, "foe": False}   # 지난 턴에 바꿨다 (두 턴 내리 안 바꾼다)
             self.moved_out = {"me": False, "foe": False}       # 이번 턴에 기술로 물러났다 (유턴 ...)
+            self.left_at = {"me": {}, "foe": {}}     # 자리 -> 살아서 물러난 턴 (스스로 · 유턴 ...) - RANK_RECALL
+            self.in_at = {"me": 1, "foe": 1}         # 지금 선수가 처음 수를 고르는 턴 - RANK_SETTLE
 
     # ---------------- 도구 ----------------
     @staticmethod
@@ -343,6 +361,9 @@ class PartyBattle(object):
         opp = bt.fighter("foe" if who == "me" else "me")
         if mode == "drag":
             nxt = self.rng.choice(others)
+            if self.war_ai:
+                # 끌려 들어온 선수는 AI 가 고른 게 아니다 - 앞 선수의 '나온 지 얼마 안 됨' 감점을 물려받지 않게 (RANK_SETTLE)
+                self.in_at[who] = -999
         elif self.war_ai:
             # 시즌 5 랭크: 길드전 AI 가 유턴 뒤에 고르는 것과 같게 - 지금 상대와 붙었을 때의 형세(_standing).
             # 거울 판을 못 만들면 예전 상성 고르기로 (판이 멈추면 안 된다).
@@ -353,6 +374,8 @@ class PartyBattle(object):
                 self.war_stats["error"] += 1
                 nxt = max(others, key=lambda i: (self._matchup(team[i], opp), -i))
             self.moved_out[who] = True               # 길드전 AI 처럼 다음 턴에는 스스로 안 바꾼다
+            self.left_at[who][cur] = self.turns + 1
+            self.in_at[who] = self.turns + 2
         else:
             nxt = max(others, key=lambda i: (self._matchup(team[i], opp), -i))
         self._bring_in(who, nxt, ev, mode, state)
@@ -482,6 +505,7 @@ class PartyBattle(object):
         if f.alive():
             A.on_switch_out(f)
             f.stages = dict((k, 0) for k in B.STAGE_KEYS)
+            f.locked = None                  # 구애 잠금은 어떤 길로 물러나든 풀린다 (유턴 · 날려 보내기 · 탈출버튼 ...)
             f.clear_volatile()
             f.types_override = None
 
@@ -565,8 +589,22 @@ class PartyBattle(object):
         m = _RankedWar.load(self.dex, json.loads(blob))
         m.rng.seed(self.ai_rng.randrange(1 << 30))
         m.war_notes = {}
+        m.rank_cost = self._rank_cost(who, mine)
         m._war_pre = blob             # 셈이 사본을 뜨는 판 = 이번 턴을 열기 전의 판 (길드전의 act 와 같다)
         return m
+
+    def _rank_cost(self, who, team):
+        """이번 턴(self.turns + 1) who 쪽이 자리마다 바꿔 들어갈 때 셈에 붙는 감점 (RANK_RECALL · RANK_SETTLE)."""
+        t = self.turns + 1
+        settle = self.RANK_SETTLE_PEN if t - self.in_at[who] < self.RANK_SETTLE_TURNS else 0.0
+        out = {}
+        for i in range(len(team)):
+            c = settle
+            if t - self.left_at[who].get(i, -999) <= self.RANK_RECALL_TURNS:
+                c += self.RANK_RECALL_PEN
+            if c:
+                out[i] = c
+        return out
 
     def _war_left(self):
         return WAR_MATCH_BUDGET - self.war_spent
@@ -708,6 +746,8 @@ class PartyBattle(object):
         ev.append({"t": "msg", "who": who, "text": "%s 은(는) 물러났다!" % old.name})
         old.flinched = False
         old.locked = None
+        self.left_at[who][self.ia if who == "me" else self.ib] = self.turns + 1
+        self.in_at[who] = self.turns + 2
         self._bring_in(who, slot, ev)
 
     def _war_advance(self, side):
@@ -733,7 +773,10 @@ class PartyBattle(object):
             else:
                 self.ib = picks[who]
             self.entered[who] = True
-            self.switched_last[who] = False
+            # 한쪽만 쓰러졌으면 _war_pick 이 지금 상대를 보고 골랐다 - 첫 턴에 바로 바꾸면 그 턴을 공짜로 준다 (RANK_FRESH_LOCK).
+            # 둘 다 쓰러졌으면 서로 모른 채 냈으니 본가처럼 바로 바꿀 수 있다.
+            self.switched_last[who] = bool(self.RANK_FRESH_LOCK and side != "both")
+            self.in_at[who] = self.turns + 1
             # 같은 턴에 기술로 물러났다가(유턴 · 탈출버튼 ...) 쓰러졌으면 moved_out 이 남아 있다. 그대로 두면 새로 낸
             # 선수가 첫 턴에 스스로 못 바꾼다 - 길드전 TrainerBattle._settle 도 다음 선수를 낸 뒤 둘 다 푼다 (10/29 검토).
             self.moved_out[who] = False

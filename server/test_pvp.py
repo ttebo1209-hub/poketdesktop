@@ -402,8 +402,11 @@ def main():
 
         print("\n=== 하루 상한 ===")
         before = money(a)
-        for i in range(20):
+        # 상한에 닿을 때까지 (판 결과는 배틀 AI 에 따라 바뀐다 - 시즌 5 랭크 AI 를 고치자 스무 판으로는 10승에 그쳤다)
+        for i in range(60):
             pvp.run_match(a, b, kind="random", seed=500 + i)
+            if pvp.summary(a)["earnedToday"] >= pvp.DAILY_CAP:
+                break
         sa = pvp.summary(a)
         chk("하루 상한을 넘지 않는다", sa["earnedToday"] <= pvp.DAILY_CAP,
             sa["earnedToday"])

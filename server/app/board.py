@@ -605,7 +605,11 @@ def mine_page(uid, what="posts", page=1, now=None, size=MINE_PAGE):
 
 
 # ---------------------------------------------------------------- 패치노트 글
-def _patch_time(version, now=None):
+def _patch_time(version, now=None, tail=""):
+    """글 날짜: 그 판이 나온 때 (patchnotes.RELEASED). 덧붙임 글(꼬리 '+1' ...)은 판이 나온 뒤에 올리는 것이라
+    RELEASED 에 따로 적은 때가 없으면 올리는 지금이다 - 판이 나온 때로 적으면 본 글보다 앞선 날짜가 된다."""
+    if tail.startswith("+"):
+        return patchnotes.RELEASED.get(version + tail) or _iso(now)
     return patchnotes.RELEASED.get(version) or _iso(now)
 
 
@@ -643,7 +647,7 @@ def ensure_patch_posts(now=None, upto=None):
                 continue
             db.run("INSERT INTO board_post (kind, user_id, author, title, body, created_at, ref)"
                    " VALUES ('patch',?,?,?,?,?,?)",
-                   (admin["id"], admin["username"], title, body, _patch_time(ver, now), ref))
+                   (admin["id"], admin["username"], title, body, _patch_time(ver, now, tail), ref))
             put = True
         if put:
             made.append(ver)

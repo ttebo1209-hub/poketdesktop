@@ -213,14 +213,25 @@ def t_190(op, a, b):
     newest = patchnotes.as_posts(patchnotes.NOTES[0]["version"])
     chk("패치노트 칸에 최신 버전이 맨 위 (나눠 올린 판은 (1) 이 위)", lst["total"] == n_posts
         and top["title"] == newest[0][1] and top["kindKr"] == "패치노트", (lst["total"], n_posts, top))
-    if len(newest) > 1:
+    if patchnotes.NOTES[0].get("split"):
         chk("  2.0.0 은 두 글: 'v2.0.0 업데이트 (1)' 다음 '(2)', 항목이 나뉘어 다 들어간다",
             [x["title"] for x in lst["posts"][:2]] == ["v2.0.0 업데이트 (1)", "v2.0.0 업데이트 (2)"]
             and sum(b.count("■ ") for _t, _ti, b in newest) == len(patchnotes.NOTES[0]["items"]),
             [x["title"] for x in lst["posts"][:3]])
     chk("운영자 이름으로 올라간다", top["author"] == op["username"] and top["authorAdmin"] is True)
     d = board.detail(a, top["id"])
-    chk("내용은 요약과 항목들", patchnotes.NOTES[0]["headline"] in d["body"] and "■ " in d["body"])
+    chk("내용은 요약과 항목들", d["body"] == newest[0][2] and "■ " in d["body"])
+    ver0 = patchnotes.NOTES[0]["version"]
+    if patchnotes.NOTES[0].get("extras"):
+        # 같은 판 번호로 서버만 더 바꾼 것 (2.0.2 추가): 본 글 위에 따로 한 글, 날짜는 올린 때
+        chk("  덧붙임 글 'v%s 업데이트 (추가)' 가 본 글 바로 위" % ver0,
+            [x["title"] for x in lst["posts"][:2]] == ["v%s 업데이트 (추가)" % ver0, "v%s 업데이트" % ver0],
+            [x["title"] for x in lst["posts"][:3]])
+        chk("  덧붙임 글은 올린 때 날짜, 본 글은 판이 나온 때", top["createdAt"] != patchnotes.RELEASED.get(ver0)
+            and lst["posts"][1]["createdAt"] == patchnotes.RELEASED.get(ver0),
+            (top["createdAt"], lst["posts"][1]["createdAt"]))
+        chk("  덧붙임 글에 그 항목이 다 들어간다",
+            d["body"].count("■ ") == len(patchnotes.NOTES[0]["extras"][-1]["items"]), d["body"].count("■ "))
     old = lst["posts"][len(newest)]
     ver = old["title"].split()[0].lstrip("v")
     chk("옛 버전은 나온 날짜로", old["createdAt"] == patchnotes.RELEASED[ver], (ver, old["createdAt"]))
@@ -242,6 +253,18 @@ def t_190(op, a, b):
     chk("upto 로 끊어 올릴 수 있다 (새 판이 나오면 그 글만 생긴다)",
         (db.run("DELETE FROM board_post WHERE ref LIKE ?", ("patch:" + patchnotes.NOTES[0]["version"] + "%",)),
          board.ensure_patch_posts(now=at(base + 800)))[1] == [patchnotes.NOTES[0]["version"]])
+    if patchnotes.NOTES[0].get("extras"):
+        # 운영 서버: 본 글(patch:2.0.2)은 이미 있고 덧붙임 글만 새로 생긴다 - 본 글은 그대로
+        main_ref = "patch:" + ver0
+        before = db.q1("SELECT id FROM board_post WHERE ref=?", (main_ref,))["id"]
+        db.run("DELETE FROM board_post WHERE ref LIKE ?", ("patch:" + ver0 + "+%",))
+        made = board.ensure_patch_posts(now=at(base + 900))
+        rows = db.q("SELECT ref, title FROM board_post WHERE ref LIKE ? ORDER BY id", ("patch:" + ver0 + "%",))
+        chk("덧붙임 글만 지워졌으면 그것만 다시 올린다 (본 글은 그대로)",
+            made == [ver0] and db.q1("SELECT id FROM board_post WHERE ref=?", (main_ref,))["id"] == before
+            and [r["ref"] for r in rows] == [main_ref, main_ref + "+1"]
+            and board.listing(a, "patch", 1)["posts"][0]["title"] == "v%s 업데이트 (추가)" % ver0,
+            (made, [dict(r) for r in rows]))
 
 
 def main():

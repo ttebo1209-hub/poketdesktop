@@ -174,16 +174,14 @@ def season5(a4, b4):
     chk("원본 도구는 그대로", [r["held"] for r in mons_of(b)][:4] == ["LIFEORB", "CHOICESCARF", "LIFEORB", "LIFEORB"],
         [r["held"] for r in mons_of(b)])
     chk("판은 끝까지 간다", out.get("matchId") and out["turns"] > 0, out.get("turns"))
-    # 2.0.2: 친구 배틀에도 건다 (모든 팀 배틀 - 11/01 사용자). 상대는 그 판에서만 뺀다, 거는 쪽은 막는다
+    # 2.0.2 추가(서버만): 친구 배틀은 바탕화면 파티 그대로 - 같은 도구가 겹쳐도 막지도 빼지도 않는다 (11/01 사용자: "일반 파티
+    # (바탕화면창)이랑 관장에서는 도구 중첩 가능하도록". 2.0.2 에 잠깐 걸었다)
     del SEEN[:]
     pvp.run_match(a, b, kind="friend", seed=8)
-    chk("친구 배틀도 상대는 그 판에서만 앞의 하나만 지닌다 (2.0.2)",
-        held_of(SEEN[-1][1])[:4] == ["LIFEORB", "CHOICESCARF", None, None], held_of(SEEN[-1][1]))
-    chk("  원본 도구는 그대로", [r["held"] for r in mons_of(b)][:4] == ["LIFEORB", "CHOICESCARF", "LIFEORB", "LIFEORB"],
-        [r["held"] for r in mons_of(b)])
-    why = pvp.can_fight(b, a, "friend")
-    chk("친구 배틀을 거는 쪽이 겹치면 못 건다 - 무엇을 고칠지 알린다",
-        why and "생명의구슬" in why and "바탕화면 파티" in why, why)
+    chk("친구 배틀은 상대가 겹쳐도 지닌 그대로 싸운다 (2.0.2 추가)",
+        held_of(SEEN[-1][1])[:4] == ["LIFEORB", "CHOICESCARF", "LIFEORB", "LIFEORB"], held_of(SEEN[-1][1]))
+    chk("친구 배틀을 거는 쪽이 겹쳐도 도구로는 막히지 않는다", pvp.can_start(b, "friend") is None,
+        pvp.can_start(b, "friend"))
 
 
 def main():

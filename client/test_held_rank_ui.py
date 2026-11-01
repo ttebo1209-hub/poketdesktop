@@ -190,7 +190,11 @@ def rank_checks(root):
     rw = ui_rank.RankWindow(app)
     pump(root, lambda: not rw.busy and rw.me)
     text = (rw._rules_data() or {}).get("text") or ""
-    chk("규칙 카드에 한 줄 (2.0.2 - 모든 팀 배틀)", "같은 지닌 도구는 한 팀에 1마리까지" in text and "길드전" in text, text)
+    held_line = next((ln for ln in text.splitlines() if "같은 지닌 도구는" in ln), "")
+    chk("규칙 카드에 한 줄 (2.0.2 추가 - 랭크 팀으로 싸우는 배틀)", "같은 지닌 도구는 한 팀에 1마리까지" in held_line
+        and "길드전" in held_line and "실시간" in held_line, text)
+    chk("  바탕화면 파티로 싸우는 친구 · 관장 · 악당 · 레이드는 그 줄에 없다",
+        not any(w in held_line for w in ("친구", "관장", "악당", "레이드")), held_line)
     short = (rw._me_data() or {}).get("short") or ""
     chk("내 카드: 랜덤 배틀을 걸 수 없음", "랜덤 배틀을 걸 수 없습니다" in short, short)
     app.api.v5 = False
