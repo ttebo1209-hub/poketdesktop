@@ -237,7 +237,8 @@ def main():
     chk("전적에 RP 변화가 남는다", rand["rpDelta"] == r["a"]["rpDelta"], rand)
     chk("친구 배틀은 RP 를 안 건드린다", r2["a"]["rpDelta"] == 0, r2["a"])
 
-    print("\n=== 전력비가 RP 와 숨은 점수에 들어간다 (run_match) ===")
+    print("\n=== 전력비가 RP 와 숨은 점수에 들어간다 (run_match, 시즌 4 규칙 - 시즌 5 는 아래) ===")
+    keep_pw, season.SEASON = season.SEASON, 4
     strong = mkuser("ss_pw_strong", 6, 50, species="GARCHOMP")
     weak = mkuser("ss_pw_weak", 6, 47, species="GARCHOMP")
     ratio = pvp.power_ratio(pvp.capped(pvp.ranked_team(strong)),
@@ -306,6 +307,22 @@ def main():
         ww and all(rpd - 10 > 20 for _ok, rpd, *_ in ww), ww)
     fr = pvp.run_match(strong, weak, kind="friend", seed=99)
     chk("친구 배틀은 여전히 점수를 안 건드린다", fr["a"]["delta"] == 0 and fr["a"]["rpDelta"] == 0)
+    season.SEASON = keep_pw
+
+    print("\n=== 시즌 5: RP 는 전력과 상관없다 · 숨은 점수에는 그대로 들어간다 (run_match) ===")
+    got5 = {}
+    for i, (att, dfn) in enumerate(((strong, weak), (weak, strong))):
+        db.run("UPDATE rank_stat SET win_day='2000-01-01', streak=0, rp=100, peak_rp=100, rating=1000"
+               " WHERE user_id IN (?, ?)", (att, dfn))
+        pvp.PB.simulate = forced_sim("me")
+        try:
+            res = pvp.run_match(att, dfn, kind="random", seed=4100 + i)
+        finally:
+            pvp.PB.simulate = real_sim
+        got5["strong" if att == strong else "weak"] = (res["a"]["rpDelta"], res["a"]["delta"])
+    chk("센 팀이 이겨도 약한 팀이 이겨도 RP 는 +20 (+ 첫 승 10)",
+        got5["strong"][0] == got5["weak"][0] == 30, got5)
+    chk("  숨은 점수는 전력비대로 (약한 팀이 이기면 더 오른다)", got5["weak"][1] > got5["strong"][1], got5)
 
     print("\n=== 전적 목록에 시즌 2 숨은 점수를 싣지 않는다 ===")
     floor_u = mkuser("ss_floor", 6, 40, species="GARCHOMP")
@@ -937,7 +954,7 @@ def main():
     migrations.run()
     chk("다시 켜도(run 한 번 더) 안 돈다", stat(strong)["rating"] == 1234, stat(strong)["rating"])
 
-    print("\n=== 시즌 5 RP 폭 (버전 2) ===")
+    print("\n=== 시즌 5 RP - 연승 · 연패로 ±3 (11/01 사용자, 전력 · 기대 승률은 안 본다) ===")
     keep = season.SEASON
     try:
         def ends():
@@ -946,17 +963,30 @@ def main():
         season.SEASON = 4
         chk("시즌 4: 옛 폭 그대로 (10~30, 5~25)", ends() == (10, 30, -5, -25), ends())
         r4 = season.rules_public()["rp"]
-        chk("  규칙 카드도 옛 값", (r4["win"], r4["lose"]) == ([10, 30], [5, 25]), r4)
+        chk("  규칙 카드도 옛 값 (연패 보호 · 전력 무게까지)",
+            (r4["win"], r4["lose"], r4["lossGuard"], r4["powerK"]) == ([10, 30], [5, 25], 3, season.POWER_K), r4)
         season.SEASON = 5
-        chk("시즌 5: 이기면 15~25, 지면 10~20", ends() == (15, 25, -10, -20), ends())
-        chk("  비슷한 상대는 그대로 +20 / -15",
-            season.rp_change("win", 1000, 1000, 0, False, 0, 0)[1] == 20
-            and season.rp_change("lose", 1000, 1000, 0, False, 100, 100)[1] == -15)
-        chk("  첫 승 +10 · 연패 보호는 그대로",
-            season.rp_change("win", 1000, 1000, 0, True, 0, 0)[1] == 30
-            and season.rp_change("lose", 1000, 1000, -3, False, 100, 100)[1] == -8)
+        chk("시즌 5: 전력 · 숨은 점수가 달라도 같은 값 (+20 / -15)", ends() == (20, 20, -15, -15), ends())
+        chk("  숨은 점수가 400 차이 나도 같다",
+            season.rp_change("win", 1400, 1000, 0, False, 0, 0)[1] == season.rp_change("win", 1000, 1400, 0, False, 0, 0)[1] == 20)
+        w = lambda st: season.rp_change("win", 1000, 1000, st, False, 0, 0)[1]
+        l = lambda st: season.rp_change("lose", 1000, 1000, st, False, 500, 500)[1]
+        chk("  연승: 첫 승 +20 · 2연승 +21 · 3연승 +22 · 4연승부터 +23",
+            [w(-2), w(0), w(1), w(2), w(3), w(9)] == [20, 20, 21, 22, 23, 23], [w(-2), w(0), w(1), w(2), w(3), w(9)])
+        chk("  연패: 첫 패 -15 · 2연패 -16 · 3연패 -17 · 4연패부터 -18 (3연패 보호는 없다)",
+            [l(2), l(0), l(-1), l(-2), l(-3), l(-9)] == [-15, -15, -16, -17, -18, -18], [l(2), l(0), l(-1), l(-2), l(-3), l(-9)])
+        new, d, notes = season.rp_change("win", 1000, 1000, 2, True, 0, 0)
+        chk("  하루 첫 승 +10 은 그대로 (3연승 +22 에 더해 +32), 알림 두 줄", d == 32 and notes == ["3연승 +2", "오늘 첫 승 +10"],
+            (d, notes))
+        new, d, notes = season.rp_change("lose", 1000, 1000, -3, False, 500, 500)
+        chk("  연패 알림", notes == ["4연패 -3"], notes)
+        chk("  슈퍼볼 바닥은 그대로", season.rp_change("lose", 1000, 1000, -5, False, 160, 170)[0] == 150)
+        chk("  비기면 그대로", season.rp_change("draw", 1000, 1000, 4, False, 50, 50)[1] == 0)
         r5 = season.rules_public()["rp"]
-        chk("  규칙 카드는 서버 값 (15~25, 10~20)", (r5["win"], r5["lose"]) == ([15, 25], [10, 20]), r5)
+        chk("  규칙 카드: streak 칸 (20~23, 15~18) · 첫 승",
+            r5.get("streak") == {"win": [20, 23], "lose": [15, 18], "max": 3} and r5.get("firstWin") == 10, r5)
+        chk("  옛 앱이 틀린 말을 붙이는 칸(win · lose · lossGuard)은 안 싣는다",
+            not any(k in r5 for k in ("win", "lose", "lossGuard")), sorted(r5))
     finally:
         season.SEASON = keep
 

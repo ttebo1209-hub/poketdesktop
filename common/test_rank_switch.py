@@ -17,6 +17,9 @@
     5. 물러난 지 5턴 안 된 선수를 다시 부르기 · 나온 지 2턴 안 된 선수를 바꾸기에 감점.
        끌려 들어온 선수(울부짖기 ...)는 AI 가 고른 게 아니라 앞 선수의 감점을 물려받지 않는다.
     6. 길드전(사람 상대) TrainerBattle 의 교체 감점은 0 이다.
+    7. 지금 나와 있는 상대에게 효과 없는 공격 기술은 점수가 비슷할 때 뒤로 민다 (게시판 #404 - 이미 나와 있는 따라큐에게
+       인파이트). 셈이 비기면 한 번도 안 고른다. 길드전 AI 는 그대로다.
+    8. #404 장면(실제 두 팀 · 남은 HP, 메가엘레이드 23 HP 대 탈이 그대로인 따라큐)에서 인파이트를 안 고른다.
 """
 import os
 import sys
@@ -204,11 +207,113 @@ def t_랭크(dex):
     chk("6. 길드전 TrainerBattle 의 교체 감점은 0", g._switch_cost(0) == 0.0)
 
 
+# 게시판 #404 (11/01 39936) 의 두 팀 - 운영 랭크 팀 그대로 (종 · 성격 · 특성 · 도구 · 개체값 · 노력치 · 기술, 레벨은 50 상한)
+_ST = ("hp", "atk", "def", "spa", "spd", "spe")
+_404_A = [  # 나라
+    ("GHOLDENGO", "QUIRKY", "GOODASGOLD", "AIRBALLOON", (3, 22, 3, 5, 9, 23), (6, 0, 0, 252, 0, 252),
+     ["MAKEITRAIN", "DAZZLINGGLEAM", "SHADOWBALL", "POWERGEM"]),
+    ("GARCHOMP", "HASTY", "SANDVEIL", "CHOICESCARF", (22, 19, 19, 12, 1, 1), (6, 252, 0, 0, 0, 252),
+     ["OUTRAGE", "EARTHQUAKE", "ROCKSLIDE", "FIREFANG"]),
+    ("TINKATON", "ADAMANT", "MOLDBREAKER", None, (28, 19, 24, 12, 3, 16), (0, 252, 8, 0, 0, 250),
+     ["HARDPRESS", "PLAYROUGH", "ROCKSLIDE", "KNOCKOFF"]),
+    ("MIRAIDON", "CALM", "HADRONENGINE", "ASSAULTVEST", (13, 31, 31, 19, 18, 31), (6, 0, 0, 252, 0, 252),
+     ["DRAGONPULSE", "DAZZLINGGLEAM", "VOLTSWITCH", "ELECTRODRIFT"]),
+    ("MEOWSCARADA", "JOLLY", "OVERGROW", "MUSCLEBAND", (10, 11, 17, 11, 0, 3), (6, 252, 0, 0, 0, 252),
+     ["FLOWERTRICK", "KNOCKOFF", "UTURN", "THUNDERPUNCH"]),
+    ("GALLADE", "JOLLY", "STEADFAST", "GALLADITE", (7, 8, 15, 5, 1, 25), (6, 252, 0, 0, 0, 252),
+     ["CLOSECOMBAT", "NIGHTSLASH", "ZENHEADBUTT", "ICEPUNCH"])]
+_404_B = [  # 상대
+    ("ARCHALUDON", "JOLLY", "STAMINA", "ASSAULTVEST", (13, 24, 2, 5, 3, 17), (36, 179, 77, 97, 55, 66),
+     ["ROCKSMASH", "HYPERBEAM", "DRAGONCLAW", "FLASHCANNON"]),
+    ("TYRANITAR", "GENTLE", "SANDSTREAM", "WEAKNESSPOLICY", (11, 16, 9, 23, 21, 12), (55, 252, 30, 110, 19, 44),
+     ["ICEPUNCH", "FIREBLAST", "STONEEDGE", "EARTHQUAKE"]),
+    ("MIMIKYU", "MILD", "DISGUISE", "MIMIKIUMZ", (6, 10, 16, 2, 6, 28), (65, 208, 57, 74, 48, 58),
+     ["SHADOWCLAW", "DESTINYBOND", "PLAYROUGH", "GIGADRAIN"]),
+    ("EXCADRILL", "TIMID", "SANDRUSH", "SITRUSBERRY", (30, 30, 15, 10, 29, 29), (42, 172, 63, 100, 68, 65),
+     ["RAPIDSPIN", "SLUDGEBOMB", "MEGAHORN", "EARTHQUAKE"]),
+    ("GENGAR", "MILD", "CURSEDBODY", "GENGARITE", (29, 19, 18, 11, 24, 18), (40, 198, 67, 72, 55, 78),
+     ["THIEF", "SLUDGEWAVE", "SHADOWBALL", "DESTINYBOND"]),
+    ("MIRAIDON", "JOLLY", "HADRONENGINE", None, (0, 31, 31, 31, 8, 10), (4, 0, 2, 252, 0, 252),
+     ["DRAGONPULSE", "OVERHEAT", "DAZZLINGGLEAM", "ELECTRODRIFT"])]
+
+
+def _404_scene(dex, seed):
+    def team(rows):
+        out = []
+        for n, (sp, nat, ab, held, iv, ev, mv) in enumerate(rows):
+            m = {"id": n + 1, "species": sp, "nickname": None, "level": 50, "exp": 0, "nature": nat, "ability": ab,
+                 "hiddenAbility": False, "gender": None, "shiny": False, "happiness": 255,
+                 "ivs": dict(zip(_ST, iv)), "evs": dict(zip(_ST, ev)), "moves": list(mv), "held": held}
+            if held and held.endswith("ITE"):
+                m["bonded"] = True                 # 유대를 마쳤다 (메가진화할 수 있다)
+            out.append(m)
+        return out
+    pb = PB.PartyBattle(dex, team(_404_A), team(_404_B), seed, keystone={"me": True, "foe": True},
+                        zring={"me": True, "foe": True}, war_ai=True)
+    pb.events.append({"t": "teams"})
+    pb.round_no = 4
+    pb.ia, pb.ib = 5, 2                        # 메가엘레이드 대 따라큐
+    pb.a[1].hp = 0                             # 한카리아스 · 상대 미라이돈은 쓰러졌다
+    pb.b[5].hp = 0
+    bt = pb._round_battle()
+    pb._entry_abilities(bt)
+    g = pb.a[5]
+    g.mega_evolve(g.mega_target())
+    bt.mega_done.add("me")
+    g.hp = 23
+    pb.turns = 7
+    pb.in_at = {"me": 6, "foe": 7}
+    pb.switched_last = {"me": False, "foe": True}
+    return pb, bt
+
+
+def t_무효(dex):
+    print("\n=== 랭크 AI: 이미 나와 있는 상대에게 효과 없는 기술 (게시판 #404) ===")
+    pb, bt = _404_scene(dex, 0)
+    m = pb._mirror("me")
+    chk("7. 인파이트는 따라큐(고스트)에게 효과 없음", m._no_effect("CLOSECOMBAT"))
+    chk("7. 사념의박치기 · 깜짝베기는 효과 있음 (탈이 막아도 깨진다)",
+        not m._no_effect("ZENHEADBUTT") and not m._no_effect("NIGHTSLASH"))
+    g = TB.TrainerBattle.__new__(TB.TrainerBattle)
+    chk("7. 길드전 TrainerBattle 은 감점이 꺼져 있다", g.WAR_NOEFFECT_PEN == 0.0)
+    picks = {}
+    for seed in range(32):
+        pb, bt = _404_scene(dex, seed)
+        plan = pb._war_plan("me")
+        k = plan[1] if plan[0] is None else "교체"
+        picks[k] = picks.get(k, 0) + 1
+    chk("8. #404 장면 32번: 인파이트(무효)를 안 고른다", "CLOSECOMBAT" not in picks, picks)
+
+    # 셈이 비길 때 (운영의 그 판은 다음에 나올 두드리짱의 틀깨기 때문에 어느 기술이든 한 턴 뒤 형세가 같았다) - 형세 값을
+    # 모두 같게 두면 사본의 운만 남는다. 감점이 있으면 무효 기술은 한 번도 안 뽑히고, 끄면 뽑힌 적이 있다
+    real = TB.TrainerBattle._eval_v2
+    TB.TrainerBattle._eval_v2 = lambda self: 0.0
+    got = {True: {}, False: {}}
+    try:
+        for on in (True, False):
+            for seed in range(40):
+                pb, bt = _404_scene(dex, seed)
+                m = pb._mirror("me")
+                m.turn += 1
+                m.bt.turn_no = m.turn
+                if not on:
+                    m.WAR_NOEFFECT_PEN = 0.0
+                m.rng.seed(seed)
+                opt = m._war_search(("move", "-"))
+                k = opt[1] if opt[0] == "move" else "교체"
+                got[on][k] = got[on].get(k, 0) + 1
+    finally:
+        TB.TrainerBattle._eval_v2 = real
+    chk("7. 셈이 비기면 효과 없는 기술은 안 고른다 (40번)", "CLOSECOMBAT" not in got[True], got[True])
+    chk("7. (견줌) 감점을 끄면 비긴 셈에서 인파이트가 뽑힌 적이 있다", got[False].get("CLOSECOMBAT", 0) > 0, got[False])
+
+
 def main():
     dex = P.Pokedex.load(os.path.join(ROOT, "server", "data", "pokedex.json"))
     t_판정(dex)
     t_날뛰기(dex)
     t_랭크(dex)
+    t_무효(dex)
     print("\n합계 OK %d · FAIL %d" % (OK, FAIL))
     return 1 if FAIL else 0
 

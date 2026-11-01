@@ -86,11 +86,18 @@ LOSS_BASE, LOSS_SWING = 5, 20
 FIRST_WIN_RP = 10
 
 
+# 시즌 5 (11/01 사용자: "점수 배정 방식은 ±3 으로 줄이고 전력치가 아닌 연승 · 연패 기준으로 (소위 mmr)"):
+# 이기면 +20, 연승이 이어지면 판마다 1 씩 더 (+23 까지) · 지면 -15, 연패가 이어지면 1 씩 더 (-18 까지).
+# 기대 승률(숨은 점수 · 두 팀 전력)은 RP 에 안 쓴다 - 숨은 점수는 매칭에 쓰므로 예전처럼 움직인다 (pvp._settle).
+# 3연패 보호(절반)는 없다 (같은 날 사용자가 고름). 처음 시즌 5 를 열 때는 기대 승률로 ±5 (15~25 / 10~20) 였다.
+V5_WIN, V5_LOSE, V5_STREAK = 20, 15, 3
+
+
 def rp_bounds():
-    """(이긴 기본, 이긴 폭, 진 기본, 진 폭). 시즌 5 부터는 기본에서 ±5 라 이기면 15~25, 지면 10~20.
-    비슷한 상대(기대 0.5)일 땐 +20 / -15 로 옛 값과 같다. 부를 때마다 규칙을 본다."""
+    """(이긴 기본, 이긴 폭, 진 기본, 진 폭). 시즌 5 는 연승 · 연패로 폭을 채운다 (20~23 / 15~18 - V5_*),
+    그 전은 기대 승률로 (10~30 / 5~25). 부를 때마다 규칙을 본다."""
     if rules_v5():
-        return 15, 10, 10, 10
+        return V5_WIN, V5_STREAK, V5_LOSE, V5_STREAK
     return WIN_BASE, WIN_SWING, LOSS_BASE, LOSS_SWING
 # 이만큼 연달아 진 뒤에는 져도 절반만 깎는다.
 LOSS_GUARD = 3
@@ -276,11 +283,30 @@ def rp_change(result, my_mmr, foe_mmr, streak, first_win, rp, peak, power_ratio=
     """한 판으로 움직일 RP. (새 RP, 변화량, 붙은 말들) 을 돌려준다.
 
     streak 은 **이 판 전의** 연승(+)/연패(-) 다. power_ratio 는 내 전력 / 상대 전력.
-    약한 팀을 이기면 덜 받고, 약한 팀에게 지면 더 잃는다.
+    시즌 4 까지: 약한 팀을 이기면 덜 받고, 약한 팀에게 지면 더 잃는다. 시즌 5: 연승 · 연패만 본다 (V5_*).
     """
-    exp = expected(my_mmr, foe_mmr, power_ratio)
     notes = []
     wb, ws, lb, ls = rp_bounds()
+    if rules_v5():
+        # 시즌 5: 연승 · 연패만 본다 (V5_* 의 설명). streak 은 이 판 전의 연승(+) / 연패(-)
+        if result == "win":
+            more = min(ws, max(0, streak))
+            d = wb + more
+            if more:
+                notes.append("%d연승 +%d" % (streak + 1, more))
+            if first_win:
+                d += FIRST_WIN_RP
+                notes.append("오늘 첫 승 +%d" % FIRST_WIN_RP)
+        elif result == "lose":
+            more = min(ls, max(0, -streak))
+            d = -(lb + more)
+            if more:
+                notes.append("%d연패 -%d" % (-streak + 1, more))
+        else:
+            d = 0
+        new = max(floor_rp(peak), rp + d)
+        return new, new - rp, notes
+    exp = expected(my_mmr, foe_mmr, power_ratio)
     if result == "win":
         d = wb + int(round(ws * (1.0 - exp)))
         if first_win:
@@ -411,6 +437,17 @@ def deco(uid):
 
 
 # ---------------------------------------------------------------- 보여 줄 표
+def _rp_public(wb, ws, lb, ls):
+    """규칙 카드의 RP 칸. 시즌 5 는 'win' · 'lose' · 'lossGuard' 를 안 싣는다 - 2.0.2 까지의 앱은 'win' 이 있으면
+    '(상대가 셀수록 더 오르고 덜 깎입니다)' 를, 'lossGuard' 가 있으면 '3연패 뒤에는 절반' 을 붙여 틀린 말이 된다.
+    새 앱은 'streak' 을 읽는다 (ui_rank)."""
+    if rules_v5():
+        return {"streak": {"win": [wb, wb + ws], "lose": [lb, lb + ls], "max": ws},
+                "firstWin": FIRST_WIN_RP}
+    return {"win": [wb, wb + ws], "lose": [lb, lb + ls],
+            "firstWin": FIRST_WIN_RP, "lossGuard": LOSS_GUARD, "powerK": POWER_K}
+
+
 def rules_public():
     """랭킹 화면에 적을 규칙과 보상. 숫자는 여기 한 곳에만 둔다."""
     wb, ws, lb, ls = rp_bounds()
@@ -424,10 +461,7 @@ def rules_public():
                     {"tier": "champion", "tierKr": TIER_KR["champion"],
                      "seats": 1}],
         "safeRp": SAFE_RP,
-        "rp": {"win": [wb, wb + ws],
-               "lose": [lb, lb + ls],
-               "firstWin": FIRST_WIN_RP, "lossGuard": LOSS_GUARD,
-               "powerK": POWER_K},
+        "rp": _rp_public(wb, ws, lb, ls),
         "rewards": [{"tier": t, "tierKr": TIER_KR[t],
                      "title": TITLES[title],
                      "frame": FRAMES[frame][0] if frame else None,

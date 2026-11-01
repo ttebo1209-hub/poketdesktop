@@ -649,6 +649,14 @@ class TrainerBattle(object):
     # 보고 몇 턴 더 내다본다. 끄면(False) 아래의 옛 셈 그대로 - 전쟁 중 문제가 보이면 이것만 끈다.
     WAR_V2 = True
     WAR_REPLY = (0.55, 0.25, 0.20)   # 사람이 할 법한 것의 무게: 가장 아픈 기술 · 둘째 기술 · 가장 나은 교체
+    # 지금 나와 있는 상대에게 아무 효과가 없는 공격 기술(타입 무효 · 부유 · 저수 ...)에 매기는 감점 (시즌 5 랭크의 거울 판
+    # _RankedWar 만 켠다). 2.0.2 추가, 게시판 #404 나라 - 메가엘레이드(23 HP)가 이미 나와 있는 따라큐에게 인파이트(무효)를
+    # 썼다. 다음에 나올 두드리짱의 틀깨기가 탈을 무시해서 한 턴 뒤에는 어느 기술을 썼든 형세가 같았고, 네 기술 점수가 비겨
+    # '따라큐가 빠지고 마기라스가 들어오면' 갈래와 사본의 운으로 인파이트가 뽑혔다. 비슷할 때 뒤로 미는 만큼만 (WAR2_PRIOR 와
+    # 같은 크기) - 상대 교체를 노려 일부러 쓰는 값이 그보다 크면 그대로 쓴다. 240판: 무효 기술 0.30 -> 0.05/판, 교체 · 턴 ·
+    # 지금 AI 와 맞붙여 50.0% 그대로. ('쓰러뜨릴 수 있는 상대는 안 바꾼다' 로 교체 갈래를 빼 보았으나 무효는 거의 그대로에
+    # 교체만 판마다 0.5 늘어 뺐다.)
+    WAR_NOEFFECT_PEN = 0.0
     WAR_DEPTH = 1                    # 몇 턴 앞까지 굴려 보나 (첫 턴 + 그 뒤를 양쪽 다 무난하게 둔 것)
     WAR_SIM = True                   # 사본으로 셈하나 (끄면 실수 없는 관장 AI 다)
     WAR_BUDGET = 0.5                 # 한 턴에 셈에 쓰는 시간 상한 (초)
@@ -868,6 +876,8 @@ class TrainerBattle(object):
                 sc -= self.WAR2_REENTRY_PEN                # 막 낸 포켓몬을 바로 바꾸면 그 턴을 공짜로 준다
             if opt[0] == "switch":
                 sc -= self._switch_cost(opt[1])
+            if opt[0] == "move" and self.WAR_NOEFFECT_PEN and self._no_effect(opt[1]):
+                sc -= self.WAR_NOEFFECT_PEN
             if best_sc is None or sc > best_sc:
                 best, best_sc = opt, sc
         took = time.time() - t0
@@ -880,6 +890,16 @@ class TrainerBattle(object):
     def _switch_cost(self, slot):
         """교체 수에 붙이는 값 - 길드전은 0 (시즌 5 랭크의 거울 판 _RankedWar 만 덮어쓴다)."""
         return 0.0
+
+    def _no_effect(self, key):
+        """이 공격 기술이 지금 나와 있는 상대에게 아무 효과가 없나 (타입 무효 · 막는 특성). 변화기는 아니다."""
+        md = self.bt.move_of(key)
+        if not md or not MC.attacks(md):
+            return False
+        if A.would_block(self.foe, self.me, md):
+            return True
+        _d, _crit, eff = B.damage(self.dex, md, self.foe, self.me, B.EST_RNG, crit=False)
+        return eff == 0
 
     def _war_log(self, text):
         """서버 로그(docker logs)에 한 줄 - 전쟁 중 새 셈을 되돌릴지 정할 근거 (2026-10-22 사용자 결정)."""

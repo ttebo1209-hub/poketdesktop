@@ -340,7 +340,12 @@ class RankWindow(object):
             tiers.append((t.get("tier"), t.get("tierKr"), need))
         rp = r.get("rp") or {}
         text = []
-        if rp.get("win") and rp.get("lose"):
+        st = rp.get("streak") or {}
+        if st.get("win") and st.get("lose"):
+            # 시즌 5 (2.0.2 추가 서버, 11/01): 연승 · 연패로 ±3. 서버는 이때 'win' · 'lose' 를 안 싣는다 (season._rp_public)
+            text.append("이기면 +%d RP, 연승마다 1씩 더 (+%d 까지) · 지면 -%d RP, 연패마다 1씩 더 (-%d 까지)"
+                        % (st["win"][0], st["win"][1], st["lose"][0], st["lose"][1]))
+        elif rp.get("win") and rp.get("lose"):
             text.append("이기면 +%d~%d RP, 지면 -%d~%d RP (상대가 셀수록 더 오르고 덜 깎입니다)"
                         % (rp["win"][0], rp["win"][1], rp["lose"][0], rp["lose"][1]))
         if rp.get("firstWin"):

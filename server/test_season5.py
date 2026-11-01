@@ -59,8 +59,8 @@ def main():
     print("=== 시즌 5 ===")
     chk("시즌 5 는 11/1 ~ 11/15", (season.SEASON, season.SEASON_STARTS, season.SEASON_ENDS)
         == (5, "2026-11-01", "2026-11-15"))
-    chk("시즌 5 규칙이 켜진다 (양쪽 길드전 AI · 같은 도구 한 마리 · 점수 폭)", season.rules_v5()
-        and season.rp_bounds() == (15, 10, 10, 10))
+    chk("시즌 5 규칙이 켜진다 (양쪽 길드전 AI · 같은 도구 한 마리 · 점수는 연승 · 연패로 ±3)", season.rules_v5()
+        and season.rp_bounds() == (20, 3, 15, 3))
     chk("티어 경계는 그대로", [(k, rp) for k, _n, rp in season.TIERS] == migrations.S4_TIER_RP, season.TIERS)
     rules = season.rules_public()
     chk("규칙표가 시즌 5 것", rules["season"] == 5 and rules["endsAt"] == "2026-11-15"

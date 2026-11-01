@@ -157,6 +157,7 @@ class _RankedWar(TB.TrainerBattle):
         TB.TrainerBattle._make_duel(self, field)
         self.bt.__class__ = _SteadyDuel
 
+    WAR_NOEFFECT_PEN = 0.3               # 지금 상대에게 효과 없는 공격 기술은 비슷할 때 뒤로 (TrainerBattle 의 설명)
     rank_cost = None                     # {자리: 교체에 붙는 감점} - PartyBattle._rank_cost 가 채운다
 
     def _switch_cost(self, slot):
