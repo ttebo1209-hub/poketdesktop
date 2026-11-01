@@ -2281,6 +2281,15 @@ def wild_flee(wid: int, ctx=Depends(current)):
     """시간이 다 됐거나 그냥 보내줄 때."""
     uid = ctx["user"]["id"]
     row = db.q1("SELECT * FROM wild WHERE id=? AND user_id=?", (wid, uid))
+    b = row and db.q1("SELECT id FROM battle WHERE user_id=? AND wild_id=? AND state='active'"
+                      " ORDER BY id DESC LIMIT 1", (uid, wid))
+    if b and battle_routes.driven_by_other(b["id"], battle_routes.who(ctx)):
+        # **다른 로그인이 지금 몰고 있는 판의 야생은 놓아주지 않는다** (2.0.2 추가, 게시판 #401). 이 판을 모르는 다른 앱
+        # (같은 계정으로 켜 둔 다른 PC)의 만료 타이머가 부른 것이다 (battle_routes.DRIVE_SEC 의 설명). 그 앱은 답을 받고
+        # 야생을 다시 물으면(check) 배틀이 늘려 둔 시각을 받아 간다.
+        troubles.record(uid, "server", "flee_kept", b["id"], "싸우는 중인 판이라 다른 앱의 놓아주기를 받지 않음")
+        st = db.q1("SELECT * FROM wild_state WHERE user_id=?", (uid,))
+        return {"ok": True, "kept": True, "nextAt": st["next_at"] if st else None}
     if row:
         db.run("DELETE FROM wild WHERE id=?", (wid,))
         deps.close_battles_of(uid, wid, "fled", "wild_flee")

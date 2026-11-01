@@ -11,6 +11,7 @@
 """
 import datetime
 import json
+import time
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -87,6 +88,38 @@ def _fainted(row):
         return []
 
 
+# ---- 판을 지금 몰고 있나 (2.0.2 추가, 게시판 #401 우가우가 '포켓볼이 안 던져지다가 포켓몬이 사라진다') ----
+# 같은 계정으로 켜 둔 다른 앱(다른 PC)은 이 판을 모른다. 그 앱의 야생 만료 타이머가 /api/wild/{id}/flee 를 부르면
+# 예전에는 지금 싸우고 있는 판이 그대로 닫혔다 - 이쪽 화면은 '지금 던지세요' 만 띄우다 다음 볼부터 409 를 받았다
+# (11/01 09:42 운영 로그: 볼 네 번은 이 앱, 놓아주기는 다른 접속처 - 그 계정은 로그인 둘이 같이 살아 있었다).
+# 그래서 판을 **최근에 몬 로그인(세션)과 다른 로그인**이 보낸 놓아주기는 main.wild_flee 가 받지 않는다.
+# 같은 로그인이 보낸 것은 예전처럼 받는다 - 앱이 스스로 판을 접은 뒤(네트워크 오류 ...) 야생을 치우는 정상 정리다.
+# 서버는 프로세스 하나라 메모리로 센다. 다시 뜨면 비어서 예전처럼 놓아준다.
+DRIVE_SEC = 120          # 볼 고르는 메뉴를 열어 둔 동안은 턴이 안 가므로 넉넉히
+_DRIVEN = {}             # 판 id -> (때, 몬 로그인의 token_hash)
+
+
+def who(ctx):
+    """요청한 로그인 (세션의 token_hash). 모르면 None."""
+    return ((ctx or {}).get("session") or {}).get("token_hash")
+
+
+def touch(bid, by=None):
+    """이 판을 지금 앱이 몰고 있다 (시작 · 이어 가기 · 턴 · 볼 · 도망). by = 몬 로그인."""
+    now = time.time()
+    _DRIVEN[bid] = (now, by)
+    if len(_DRIVEN) > 2000:
+        for k in [k for k, (t, _b) in _DRIVEN.items() if now - t > DRIVE_SEC]:
+            _DRIVEN.pop(k, None)
+
+
+def driven_by_other(bid, by, now=None):
+    """최근 DRIVE_SEC 안에 **다른** 로그인이 이 판을 몰았나. 어느 쪽이든 로그인을 모르면 False (예전처럼)."""
+    t, drv = _DRIVEN.get(bid) or (None, None)
+    return (t is not None and drv is not None and by is not None and drv != by
+            and (now or time.time()) - t < DRIVE_SEC)
+
+
 def _load(ctx, bid=None):
     """진행 중인 배틀 행을 가져온다."""
     uid = ctx["user"]["id"]
@@ -104,6 +137,7 @@ def _load(ctx, bid=None):
         troubles.battle_left(row, "expired")            # 앱이 제한 시간 뒤에 이어 가려 했다 (1.13.3)
         db.run("UPDATE battle SET state='done', result='fled' WHERE id=?", (row["id"],))
         raise HTTPException(410, "배틀이 시간 초과로 끝났습니다.")
+    touch(row["id"], who(ctx))
     return row
 
 
@@ -440,6 +474,7 @@ def start(wid: int, ctx=Depends(deps.current)):
         if old["wild_id"] == wid and old["mine_id"] in set(m["id"] for m in party):
             me, foe = _fighters(d, old)
             bt = _battle(d, old, me, foe)
+            touch(old["id"], who(ctx))
             return {"battle": _view(d, old, bt), "resumed": True}
         # 옛 판이 끝나지 않은 채 남아 있었다 = 앱이 그 판을 끝까지 몰고 가지 않았다. 남긴다 (1.13.3, 게시판 #266
         # 레드 36세 10/19 08:24 - 네 번째 포켓몬이 나온 뒤 한 번도 안 움직였고 8분 뒤 이 줄이 그 판을 닫았다).
@@ -473,6 +508,7 @@ def start(wid: int, ctx=Depends(deps.current)):
 
     row = db.q1("SELECT * FROM battle WHERE id=?", (cur.lastrowid,))
     bt = _battle(d, row, me, foe)
+    touch(row["id"], who(ctx))
     return {"battle": _view(d, row, bt), "resumed": False,
             "ballOptions": ball_options(uid, ctx["user"], bt, row),
             "intro": "앗! 야생 %s 이(가) 튀어나왔다!" % foe.name}

@@ -70,8 +70,11 @@ def mkwild(uid, species="RATTATA", level=5, minutes=5):
                   " VALUES (?,?,?,?,0,?,?)", (uid, "revealed", species, json.dumps(m), auth.now_iso(), later)).lastrowid
 
 
-def ctx(uid):
-    return {"user": dict(db.q1("SELECT * FROM users WHERE id=?", (uid,)))}
+def ctx(uid, login=None):
+    out = {"user": dict(db.q1("SELECT * FROM users WHERE id=?", (uid,)))}
+    if login:
+        out["session"] = {"token_hash": login}          # 그 로그인(세션)으로 부른 것 (2.0.2 추가)
+    return out
 
 
 def rows(uid):
@@ -144,9 +147,13 @@ def main_():
         (code, new_since(uid, n)))
 
     w5 = mkwild(uid)
-    b5 = BR.start(w5, ctx(uid))["battle"]["id"]
+    b5 = BR.start(w5, ctx(uid, "pc1"))["battle"]["id"]
     n = len(rows(uid))
-    main.wild_flee(w5, ctx(uid))
+    main.wild_flee(w5, ctx(uid, "pc2"))
+    chk("다른 로그인이 몰고 있는 판이면 놓아주기를 받지 않고 남긴다 (2.0.2 추가)",
+        [(r["kind"], r["ref"]) for r in new_since(uid, n)] == [("flee_kept", b5)], new_since(uid, n))
+    n = len(rows(uid))
+    main.wild_flee(w5, ctx(uid, "pc1"))
     chk("앱이 야생을 놓아주며 판이 닫혔다", [(r["kind"], r["ref"]) for r in new_since(uid, n)] == [("left_wild_flee", b5)],
         new_since(uid, n))
 

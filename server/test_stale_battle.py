@@ -11,6 +11,8 @@
 
   1. 배틀 밖에서 잡으면 걸려 있던 배틀도 끝난다 (result = caught).
   2. 야생이 떠나거나(flee) 시간이 다 되어 치워져도(_sweep) 끝난다 (result = fled).
+     단 **다른 로그인**이 지금 몰고 있는 판(battle_routes.DRIVE_SEC 안)의 야생은 놓아주지 않는다 - 같은 계정으로
+     켜 둔 다른 앱이 부른 놓아주기다 (2.0.2 추가, 게시판 #401).
   3. **이미 그렇게 남아 있는 줄**(야생이 없거나 제한 시간이 지난 줄)은 '배틀 중' 으로 세지 않고,
      물어본 김에 닫는다. 살아 있는 배틀은 그대로 '배틀 중' 이다.
 """
@@ -20,6 +22,7 @@ import os
 import random
 import sys
 import tempfile
+import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -72,8 +75,12 @@ def mkwild(uid, species="RATTATA", level=5, minutes=5):
                   " VALUES (?,?,?,?,0,?,?)", (uid, "revealed", species, json.dumps(m), auth.now_iso(), later)).lastrowid
 
 
-def ctx(uid):
-    return {"user": dict(db.q1("SELECT * FROM users WHERE id=?", (uid,)))}
+def ctx(uid, login=None):
+    """login 을 주면 그 로그인(세션)으로 부른 것 - 같은 계정의 다른 앱을 흉내 낸다 (2.0.2 추가)."""
+    out = {"user": dict(db.q1("SELECT * FROM users WHERE id=?", (uid,)))}
+    if login:
+        out["session"] = {"token_hash": login}
+    return out
 
 
 def battle_of(bid):
@@ -106,6 +113,27 @@ def main_():
     out = item_routes.use(item_routes.UseIn(item="RARECANDY", pokemon=lead), ctx(uid))
     chk("  바로 도구를 쓸 수 있다 (이상한사탕)", out.get("ok") and db.q1("SELECT level FROM pokemon WHERE id=?", (lead,))["level"] == lv + 1,
         out.get("message"))
+
+    print("\n=== 다른 앱(같은 계정)의 놓아주기 - 몰고 있는 판은 그대로 (2.0.2 추가, 게시판 #401) ===")
+    wid = mkwild(uid)
+    bid = BR.start(wid, ctx(uid, "pc1"))["battle"]["id"]
+    out = main.wild_flee(wid, ctx(uid, "pc2"))
+    chk("다른 로그인(다른 PC)이 놓아주면 받지 않는다 (kept)", out.get("kept") and battle_of(bid)["state"] == "active"
+        and db.q1("SELECT id FROM wild WHERE id=?", (wid,)) is not None and deps.in_battle(uid, lead), (out, battle_of(bid)))
+    BR._DRIVEN[bid] = (time.time() - BR.DRIVE_SEC - 1, "pc1")    # 한동안 안 몰았다가
+    BR._load(ctx(uid, "pc1"), bid)                               # 턴 · 볼 · 도망 요청이 오면 다시 '몰고 있다'
+    chk("  턴을 몰면 다시 지킨다", main.wild_flee(wid, ctx(uid, "pc2")).get("kept") and battle_of(bid)["state"] == "active")
+    BR._DRIVEN[bid] = (time.time() - BR.DRIVE_SEC - 1, "pc1")    # 몬 지 오래됐다
+    out = main.wild_flee(wid, ctx(uid, "pc2"))
+    chk("  몬 지 오래된 판은 예전처럼 놓아주고 판도 닫는다", not out.get("kept") and battle_of(bid)["result"] == "fled"
+        and db.q1("SELECT id FROM wild WHERE id=?", (wid,)) is None, (out, battle_of(bid)))
+    wid = mkwild(uid)
+    bid = BR.start(wid, ctx(uid, "pc1"))["battle"]["id"]
+    out = main.wild_flee(wid, ctx(uid, "pc1"))
+    chk("  판을 몬 그 로그인이 놓아주면 예전처럼 받는다 (앱이 스스로 판을 접은 뒤의 정리)",
+        not out.get("kept") and battle_of(bid)["result"] == "fled", (out, battle_of(bid)))
+    out = main.wild_flee(mkwild(uid), ctx(uid, "pc2"))
+    chk("  배틀이 없는 야생은 그대로 놓아준다", out.get("ok") and not out.get("kept"), out)
 
     print("\n=== 야생이 떠나거나 시간이 다 됐다 ===")
     wid = mkwild(uid)

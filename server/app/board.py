@@ -622,6 +622,7 @@ def ensure_patch_posts(now=None, upto=None):
 
     글쓴이는 운영자다. 운영자 계정이 아직 없으면(새 DB) 아무것도 안 하고,
     다음에 뜰 때 다시 본다. 지워진 글도 '있는 것' 으로 쳐서 되살리지 않는다.
+    덧붙임 글('+1' ...)은 원본이 바뀌었으면 고친다 (항목을 더했을 때).
 
     upto 는 여기까지의 버전만 (검사용).
     """
@@ -632,8 +633,8 @@ def ensure_patch_posts(now=None, upto=None):
             break
     if not admin:
         return []
-    have = set(r["ref"] for r in db.q(
-        "SELECT ref FROM board_post WHERE ref LIKE 'patch:%'"))
+    have = dict((r["ref"], r) for r in db.q(
+        "SELECT ref, title, body, deleted FROM board_post WHERE ref LIKE 'patch:%'"))
     made = []
     for n in reversed(patchnotes.NOTES):                   # 오래된 판부터
         ver = n["version"]
@@ -644,6 +645,15 @@ def ensure_patch_posts(now=None, upto=None):
         for tail, title, body in reversed(patchnotes.as_posts(ver)):
             ref = "patch:" + ver + tail
             if ref in have:
+                old = have[ref]
+                # 덧붙임 글(꼬리 '+1' ...)은 같은 판으로 서버만 더 바꿀 때 항목이 늘어난다 (11/01 사용자 "이미 올라온 2.0.2
+                # 추가 패치노트에 1줄 추가로"). 원본(patchnotes)과 달라졌으면 그 글을 고친다 - 번호 · 날짜 · 댓글 · 좋아요는
+                # 그대로. 본 글은 고치지 않는다 (나간 판의 기록이다). 지운 글도 그대로 둔다.
+                if (tail.startswith("+") and not old["deleted"]
+                        and (old["title"], old["body"]) != (title, body)):
+                    db.run("UPDATE board_post SET title=?, body=?, updated_at=? WHERE ref=?",
+                           (title, body, _iso(now), ref))
+                    print("[board] 패치노트 덧붙임 글을 고쳤습니다 (%s)" % ref)
                 continue
             db.run("INSERT INTO board_post (kind, user_id, author, title, body, created_at, ref)"
                    " VALUES ('patch',?,?,?,?,?,?)",

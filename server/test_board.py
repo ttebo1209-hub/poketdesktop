@@ -265,6 +265,22 @@ def t_190(op, a, b):
             and [r["ref"] for r in rows] == [main_ref, main_ref + "+1"]
             and board.listing(a, "patch", 1)["posts"][0]["title"] == "v%s 업데이트 (추가)" % ver0,
             (made, [dict(r) for r in rows]))
+        # 이미 올라간 덧붙임 글에 항목을 더했다 (11/01 '1줄 추가로') - 서버가 뜰 때 그 글을 고친다
+        extra_ref = main_ref + "+1"
+        row0 = db.q1("SELECT id, created_at, body FROM board_post WHERE ref=?", (extra_ref,))
+        main0 = db.q1("SELECT body, updated_at FROM board_post WHERE ref=?", (main_ref,))
+        short = row0["body"].rsplit("\n\n■ ", 1)[0]            # 마지막 항목이 없던 때의 글
+        db.run("UPDATE board_post SET body=? WHERE ref=?", (short, extra_ref))
+        made = board.ensure_patch_posts(now=at(base + 1000))
+        row1 = db.q1("SELECT id, created_at, body, updated_at FROM board_post WHERE ref=?", (extra_ref,))
+        chk("덧붙임 글에 항목을 더하면 올라간 글을 고친다 (번호 · 날짜 그대로, 새 글 없음)",
+            made == [] and row1["id"] == row0["id"] and row1["created_at"] == row0["created_at"]
+            and row1["body"] == row0["body"] and row1["updated_at"],
+            (made, row1["id"], row0["id"], row1["body"][-60:]))
+        chk("  본 글은 안 고친다", db.q1("SELECT body, updated_at FROM board_post WHERE ref=?", (main_ref,)) == main0)
+        db.run("UPDATE board_post SET body='x', deleted=1 WHERE ref=?", (extra_ref,))
+        board.ensure_patch_posts(now=at(base + 1100))
+        chk("  지운 덧붙임 글은 그대로 둔다", db.q1("SELECT body FROM board_post WHERE ref=?", (extra_ref,))["body"] == "x")
 
 
 def main():
